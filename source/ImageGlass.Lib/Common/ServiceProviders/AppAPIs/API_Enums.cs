@@ -81,6 +81,7 @@ public enum API
     IG_ToggleExplorerSortOrder,
     IG_SetLoadingOrderBy,
     IG_SetLoadingOrderType,
+    IG_ToggleLoadingOrderBy,
     IG_SetColorChannels,
     IG_OpenEditingApp,
     IG_InvertColors,

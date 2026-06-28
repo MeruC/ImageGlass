@@ -172,16 +172,18 @@ public partial class MainWindow : PhWindow
 
     protected override async void OnKeyDown(KeyEventArgs e)
     {
-        base.OnKeyDown(e);
-        if (e.Handled) return;
-
+        // Let text input controls handle keys normally via base first.
         if (e.Source is TextBox
             or NumericUpDown
             or MaskedTextBox
-            or AutoCompleteBox) return;
+            or AutoCompleteBox)
+        {
+            base.OnKeyDown(e);
+            return;
+        }
 
-        // process app hotkeys
-        // press ESC: exit slideshow if it is running
+        // Run app hotkeys BEFORE base so Alt+key combos (WM_SYSKEYDOWN) are not
+        // swallowed by Avalonia's system-key handling (e.g. Alt+C for crop).
         var hk = new Hotkey(e);
         if (hk.IsSame(Key.Escape) && Core.Slideshow?.IsRunning == true)
         {
@@ -190,9 +192,10 @@ public partial class MainWindow : PhWindow
             return;
         }
 
-
         await Core.API.HandleKeyDownAsync(e);
         if (e.Handled) return;
+
+        base.OnKeyDown(e);
     }
 
 

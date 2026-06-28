@@ -1478,6 +1478,42 @@ public partial class AppAPIProvider
 
 
     /// <summary>
+    /// Toggles the image loading order by the given field.
+    /// If already sorted by that field, flips Asc/Desc.
+    /// Otherwise switches to that field with Asc.
+    /// </summary>
+    public void IG_ToggleLoadingOrderBy(string? orderByStr)
+    {
+        if (!Enum.TryParse<ImageOrderBy>(orderByStr, out var orderBy))
+        {
+            throw new ArgumentException($"""
+                '{orderByStr}' is not a valid loading order.
+
+                ----------
+                👉🏼 Method: {nameof(IG_ToggleLoadingOrderBy)}
+                """,
+                nameof(orderByStr));
+        }
+
+        if (Core.Config.ImageLoadingOrder == orderBy)
+        {
+            // already on this field — flip direction
+            var newType = Core.Config.ImageLoadingOrderType == ImageOrderType.Asc
+                ? ImageOrderType.Desc
+                : ImageOrderType.Asc;
+            Core.Config.ImageLoadingOrderType = newType;
+        }
+        else
+        {
+            Core.Config.ImageLoadingOrder = orderBy;
+            Core.Config.ImageLoadingOrderType = ImageOrderType.Asc;
+        }
+
+        IG_ReloadList();
+    }
+
+
+    /// <summary>
     /// Sets the image loading order value.
     /// </summary>
     public void IG_SetLoadingOrderType(string? orderTypeStr)

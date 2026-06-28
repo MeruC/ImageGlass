@@ -19,8 +19,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 using ImageGlass.Common.Actions;
 using ImageGlass.Common.AppThemes;
 using ImageGlass.Common.Localization;
+using ImageGlass.Common.Photoing;
 using ImageGlass.Common.ServiceProviders;
 using ImageGlass.Common.Types;
+using ImageGlass.Tools;
 using ImageGlass.UI;
 using ImageGlass.UI.Viewer;
 using System;
@@ -159,6 +161,44 @@ public partial class Config
             Image = nameof(IgThemeIcon.ViewNextImage),
             Text = Lang.KeysMap[LangId.FrmMain_MnuViewNext],
             OnClick = new(LangId.FrmMain_MnuViewNext, API.IG_ViewNext),
+        },
+        ToolbarItemModel.Separator,
+
+
+        // rotate left
+        new() {
+            Id = $"Btn_{nameof(IgThemeIcon.RotateLeft)}",
+            Image = nameof(IgThemeIcon.RotateLeft),
+            Text = Lang.KeysMap[LangId.FrmMain_MnuRotateLeft],
+            OnClick = new(LangId.FrmMain_MnuRotateLeft, API.IG_Rotate, nameof(RotateOption.Left)),
+        },
+        // rotate right
+        new() {
+            Id = $"Btn_{nameof(IgThemeIcon.RotateRight)}",
+            Image = nameof(IgThemeIcon.RotateRight),
+            Text = Lang.KeysMap[LangId.FrmMain_MnuRotateRight],
+            OnClick = new(LangId.FrmMain_MnuRotateRight, API.IG_Rotate, nameof(RotateOption.Right)),
+        },
+        // flip horizontal
+        new() {
+            Id = $"Btn_{nameof(IgThemeIcon.FlipHorz)}",
+            Image = nameof(IgThemeIcon.FlipHorz),
+            Text = Lang.KeysMap[LangId.FrmMain_MnuFlipHorizontal],
+            OnClick = new(LangId.FrmMain_MnuFlipHorizontal, API.IG_FlipImage, nameof(FlipOptions.Horizontal)),
+        },
+        // flip vertical
+        new() {
+            Id = $"Btn_{nameof(IgThemeIcon.FlipVert)}",
+            Image = nameof(IgThemeIcon.FlipVert),
+            Text = Lang.KeysMap[LangId.FrmMain_MnuFlipVertical],
+            OnClick = new(LangId.FrmMain_MnuFlipVertical, API.IG_FlipImage, nameof(FlipOptions.Vertical)),
+        },
+        // crop tool
+        new() {
+            Id = $"Btn_{nameof(IgThemeIcon.Crop)}",
+            Image = nameof(IgThemeIcon.Crop),
+            Text = Lang.KeysMap[LangId.FrmMain_MnuCropTool],
+            OnClick = new(LangId.FrmMain_MnuCropTool, API.IG_ToggleTool, CropImageToolControl.TOOL_ID),
         },
         ToolbarItemModel.Separator,
 

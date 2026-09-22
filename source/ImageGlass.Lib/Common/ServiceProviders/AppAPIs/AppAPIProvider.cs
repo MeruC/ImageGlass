@@ -105,6 +105,10 @@ public partial class AppAPIProvider
             new ToolControlAdapter(ColorPickerToolControl.TOOL_ID, v => new ColorPickerToolControl { Viewer = v }));
         Core.ToolRegistry.Register(CropImageToolControl.TOOL_ID,
             new ToolControlAdapter(CropImageToolControl.TOOL_ID, v => new CropImageToolControl { Viewer = v }));
+        Core.ToolRegistry.Register(QuickCropToolControl.TOOL_ID,
+            new ToolControlAdapter(QuickCropToolControl.TOOL_ID, v => new QuickCropToolControl { Viewer = v }));
+        Core.ToolRegistry.Register(RenamerToolControl.TOOL_ID,
+            new ToolControlAdapter(RenamerToolControl.TOOL_ID, v => new RenamerToolControl { Viewer = v }, prefersFullHost: true));
         Core.ToolRegistry.Register(FrameNavToolControl.TOOL_ID,
             new ToolControlAdapter(FrameNavToolControl.TOOL_ID, v => new FrameNavToolControl { Viewer = v }));
         Core.ToolRegistry.Register(HdrToneMapperToolControl.TOOL_ID,

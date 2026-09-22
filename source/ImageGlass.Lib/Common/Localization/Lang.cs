@@ -1242,6 +1242,7 @@ public class Lang
         new(LangId.Tool_Crop_BtnSaveAs, "Save as…"), //v9.0
         new(LangId.Tool_Crop_BtnCrop, "Crop"), //v9.0
         new(LangId.Tool_Crop_BtnCopy, "Copy"), //v9.0
+        new(LangId.Tool_Crop_ChkBackupOriginal, "Backup original"), //v10
 
         // Crop settings
         new(LangId.Tool_Crop_Title, "Crop settings"), //v9.0
@@ -1256,6 +1257,50 @@ public class Lang
         new(LangId.Tool_Crop_DefaultSelectionType_CustomArea, "Custom area…"), //v9.0
 
         #endregion // Tool: Crop
+
+
+        #region Tool: Quick Crop
+        new(LangId.Menu_MnuQuickCrop, "Quick crop"), // v10
+
+        new(LangId.Tool_QuickCrop_BtnLockSize, "Lock size"), // v10
+        new(LangId.Tool_QuickCrop_BtnAxisHorizontal, "Move horizontally only"), // v10
+        new(LangId.Tool_QuickCrop_BtnAxisVertical, "Move vertically only"), // v10
+        new(LangId.Tool_QuickCrop_BtnSave, "Save crop"), // v10
+        new(LangId.Tool_QuickCrop_BtnBrowse, "Browse…"), // v10
+        new(LangId.Tool_QuickCrop_LblSaveFolder, "Save folder"), // v10
+
+        new(LangId.Tool_QuickCrop_StatusHint, "Drag to select, drag inside to move, Enter to save"), // v10
+        new(LangId.Tool_QuickCrop_StatusNoSelection, "Draw a selection first"), // v10
+        new(LangId.Tool_QuickCrop_StatusNoImage, "No image is open"), // v10
+        new(LangId.Tool_QuickCrop_StatusLockFirst, "Draw a selection first, then lock its size"), // v10
+        new(LangId.Tool_QuickCrop_StatusSaved, "Saved {0} ({1}×{2})"), // v10
+        new(LangId.Tool_QuickCrop_StatusSaveError, "Could not save: {0}"), // v10
+        new(LangId.Tool_QuickCrop_StatusFolderError, "Could not create the save folder"), // v10
+        #endregion // Tool: Quick Crop
+
+
+        #region Tool: Renamer
+        new(LangId.Menu_MnuRenamer, "Renamer"), // v10
+
+        new(LangId.Tool_Renamer_BtnSave, "Save"), // v10
+        new(LangId.Tool_Renamer_BtnUndo, "Undo"), // v10
+        new(LangId.Tool_Renamer_BtnAddName, "Add name…"), // v10
+        new(LangId.Tool_Renamer_ChkPreview, "Preview"), // v10
+        new(LangId.Tool_Renamer_LblZoom, "Zoom"), // v10
+        new(LangId.Tool_Renamer_TxtSearchPlaceholder, "Search names…"), // v10
+
+        new(LangId.Tool_Renamer_StatusImageCount, "{0} image(s)"), // v10
+        new(LangId.Tool_Renamer_StatusSelectedCount, "{0} selected / {1} image(s)"), // v10
+        new(LangId.Tool_Renamer_StatusStagedCount, "{0} staged / {1} image(s)"), // v10
+        new(LangId.Tool_Renamer_StatusSelectFirst, "Select images first"), // v10
+        new(LangId.Tool_Renamer_StatusSaved, "Saved {0} file(s) to output/{1}"), // v10
+        new(LangId.Tool_Renamer_StatusSaveError, "Could not save: {0}"), // v10
+
+        new(LangId.Tool_Renamer_ConfirmSaveTitle, "Save staged renames?"), // v10
+        new(LangId.Tool_Renamer_ConfirmSaveDescription, "{0} image(s) will be converted to .webp in \"output\\\". {1} unstaged image(s) will be moved to \"unrenamed\\\"."), // v10
+        new(LangId.Tool_Renamer_ConfirmOverwriteTitle, "Overwrite existing files?"), // v10
+        new(LangId.Tool_Renamer_ConfirmOverwriteDescription, "{0} file(s) already exist in \"output\\\" and will be overwritten."), // v10
+        #endregion // Tool: Renamer
 
 
         #region Tool: HDR tone mapper

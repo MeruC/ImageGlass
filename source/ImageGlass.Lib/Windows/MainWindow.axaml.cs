@@ -105,8 +105,20 @@ public partial class MainWindow : PhWindow
         // load color profile
         Core.UpdateDestColorProfile();
 
-        // restore last opened tool
-        _ = await Core.API.RunApiAsync(API.IG_OpenTool, Core.Config.LastOpenedTool);
+        // restore last opened tool, unless it takes over the whole window (hides the image) —
+        // reopening straight into that on startup would defeat opening an image normally
+        var lastTool = Core.Config.LastOpenedTool;
+        if (!string.IsNullOrEmpty(lastTool)
+            && Core.ToolRegistry.Get(lastTool) is ToolControlAdapter { PrefersFullHost: true })
+        {
+            // also clear the persisted value itself: toolbar buttons bound to LastOpenedTool
+            // (e.g. ConfigBindingValue="Tool_Renamer") would otherwise show highlighted for a
+            // tool that never actually opened
+            lastTool = "";
+            Core.Config.LastOpenedTool = "";
+        }
+
+        _ = await Core.API.RunApiAsync(API.IG_OpenTool, lastTool);
     }
 
 

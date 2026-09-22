@@ -91,13 +91,21 @@ public partial class ViewerControl
 
 
     /// <summary>
+    /// Enables or disables the selection's resize handles; drawing and moving are unaffected.
+    /// A caller that locks the selection to a fixed size sets this to <c>false</c> so the handles
+    /// aren't shown or hit-tested for a resize the caller would just snap back anyway.
+    /// </summary>
+    public bool EnableSelectionResize { get; set; } = true;
+
+
+    /// <summary>
     /// Gets 8 resizers of the selection rectangle
     /// </summary>
     public List<SelectionResizer> SelectionResizers
     {
         get
         {
-            if (SourceSelection.IsEmpty) return [];
+            if (SourceSelection.IsEmpty || !EnableSelectionResize) return [];
 
             var resizerSize = DpiScale(7f);
             var resizerMargin = DpiScale(1f);

@@ -37,10 +37,18 @@ public sealed class ToolControlAdapter : ITool
     public object? Settings => null;
     public ViewerControl Viewer { get; set; } = null!;
 
-    public ToolControlAdapter(string toolId, ToolControlFactory factory)
+    /// <summary>
+    /// Mirrors <see cref="IToolControl.PrefersFullHost"/> without needing to construct the tool
+    /// (which needs a live <see cref="ViewerControl"/>) just to read a fixed, per-tool-type flag —
+    /// e.g. to decide whether to restore this tool on startup, before the tool itself exists.
+    /// </summary>
+    public bool PrefersFullHost { get; }
+
+    public ToolControlAdapter(string toolId, ToolControlFactory factory, bool prefersFullHost = false)
     {
         ToolId = toolId;
         _factory = factory;
+        PrefersFullHost = prefersFullHost;
     }
 
     /// <summary>

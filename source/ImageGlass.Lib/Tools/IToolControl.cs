@@ -44,6 +44,17 @@ public interface IToolControl : ITool
 
 
     /// <summary>
+    /// Gets the value indicating this tool wants the tool host to take over the whole window
+    /// (main viewer and bottom gallery hidden) instead of sharing space below a shrunk viewer.
+    /// For tools whose own content (e.g. a folder-wide grid) needs the room more than the single
+    /// current image does.
+    /// </summary>
+    bool PrefersFullHost => false;
+
+
+
+
+    /// <summary>
     /// Shows the tool settings window.
     /// </summary>
     Task ShowSettingsWindowAsync() => Task.CompletedTask;

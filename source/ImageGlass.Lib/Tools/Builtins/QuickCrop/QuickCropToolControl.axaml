@@ -1,0 +1,105 @@
+<ui:PhControl
+    x:Class="ImageGlass.Tools.QuickCropToolControl"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="using:ImageGlass.UI"
+    mc:Ignorable="d"
+    d:DesignHeight="120"
+    d:DesignWidth="960"
+    x:Name="Root"
+    Padding="6,12">
+
+    <WrapPanel
+        HorizontalAlignment="Center"
+        VerticalAlignment="Center"
+        ItemSpacing="24"
+        ItemsAlignment="Center"
+        LineSpacing="8"
+        Orientation="Horizontal">
+
+        <!--  Lock size + axis lock  -->
+        <StackPanel
+            HorizontalAlignment="Center"
+            Orientation="Horizontal"
+            Spacing="6">
+            <ui:PhButton
+                x:Name="PART_BtnLockSize"
+                MinWidth="90"
+                Focusable="False"
+                HorizontalContentAlignment="Center"
+                IconData="{StaticResource IconCrop}" />
+            <ui:PhButton
+                x:Name="PART_BtnAxisHorizontal"
+                MinWidth="40"
+                Focusable="False"
+                HorizontalContentAlignment="Center" />
+            <ui:PhButton
+                x:Name="PART_BtnAxisVertical"
+                MinWidth="40"
+                Focusable="False"
+                HorizontalContentAlignment="Center" />
+        </StackPanel>
+
+
+        <!--  Locked-axis coordinate: precise entry for the axis that isn't free to drag  -->
+        <StackPanel
+            x:Name="PART_PanelAxisValue"
+            HorizontalAlignment="Center"
+            IsVisible="False"
+            Orientation="Horizontal"
+            Spacing="6">
+            <ui:PhTextBlock
+                x:Name="PART_LblAxisValue"
+                VerticalAlignment="Center"
+                Opacity="0.6" />
+            <NumericUpDown
+                x:Name="PART_NumAxisValue"
+                Minimum="0"
+                ParsingNumberStyle="Integer"
+                ShowButtonSpinner="False" />
+        </StackPanel>
+
+
+        <!--  Save folder  -->
+        <StackPanel
+            HorizontalAlignment="Center"
+            Orientation="Horizontal"
+            Spacing="6">
+            <ui:PhTextBlock
+                VerticalAlignment="Center"
+                LangKey="Tool_QuickCrop_LblSaveFolder"
+                Opacity="0.6" />
+
+            <TextBox
+                x:Name="PART_TxtSaveFolder"
+                MinWidth="260"
+                IsReadOnly="True" />
+
+            <ui:PhButton
+                x:Name="PART_BtnBrowse"
+                MinWidth="80"
+                HorizontalContentAlignment="Center" />
+        </StackPanel>
+
+
+        <!--  Save  -->
+        <ui:PhButton
+            x:Name="PART_BtnSave"
+            MinWidth="100"
+            HorizontalContentAlignment="Center"
+            IconData="{StaticResource IconSave}"
+            Variant="Accent" />
+
+
+        <!--  Status  -->
+        <ui:PhTextBlock
+            x:Name="PART_LblStatus"
+            MinWidth="200"
+            VerticalAlignment="Center"
+            Opacity="0.7"
+            TextWrapping="Wrap" />
+
+    </WrapPanel>
+</ui:PhControl>

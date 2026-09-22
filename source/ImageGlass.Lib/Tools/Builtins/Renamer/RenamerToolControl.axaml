@@ -1,0 +1,118 @@
+<ui:PhControl
+    x:Class="ImageGlass.Tools.RenamerToolControl"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="using:ImageGlass.UI"
+    mc:Ignorable="d"
+    d:DesignHeight="480"
+    d:DesignWidth="960"
+    x:Name="Root"
+    Padding="8">
+
+    <Grid ColumnDefinitions="Auto,*,230">
+
+        <!--  optional large preview of the last-clicked image  -->
+        <Border
+            x:Name="PART_PreviewPanel"
+            Grid.Column="0"
+            Width="280"
+            Margin="0,0,10,0"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch"
+            Background="{DynamicResource IG_ToolHostBackgroundBrush}"
+            CornerRadius="4"
+            IsVisible="False">
+            <Image
+                x:Name="PART_PreviewImage"
+                Margin="4"
+                Stretch="Uniform" />
+        </Border>
+
+
+        <!--  thumbnail grid  -->
+        <Grid Grid.Column="1" RowDefinitions="Auto,*">
+            <StackPanel
+                Grid.Row="0"
+                Margin="0,0,0,6"
+                Orientation="Horizontal"
+                Spacing="6">
+                <ui:PhButton
+                    x:Name="PART_BtnSave"
+                    MinWidth="90"
+                    HorizontalContentAlignment="Center"
+                    IconData="{StaticResource IconSave}"
+                    Variant="Accent" />
+                <ui:PhButton
+                    x:Name="PART_BtnUndo"
+                    MinWidth="80"
+                    HorizontalContentAlignment="Center"
+                    IconData="{StaticResource IconReset}" />
+                <CheckBox x:Name="PART_ChkPreview" VerticalAlignment="Center">
+                    <ui:PhTextBlock LangKey="Tool_Renamer_ChkPreview" />
+                </CheckBox>
+
+                <ui:PhTextBlock
+                    Margin="12,0,0,0"
+                    VerticalAlignment="Center"
+                    LangKey="Tool_Renamer_LblZoom"
+                    Opacity="0.6" />
+                <Slider
+                    x:Name="PART_SldZoom"
+                    Width="120"
+                    Maximum="220"
+                    Minimum="50"
+                    TickFrequency="10" />
+                <ui:PhTextBlock
+                    x:Name="PART_LblZoomValue"
+                    Width="34"
+                    VerticalAlignment="Center"
+                    Opacity="0.6" />
+
+                <ui:PhTextBlock
+                    x:Name="PART_LblStatus"
+                    Margin="12,0,0,0"
+                    VerticalAlignment="Center"
+                    Opacity="0.7" />
+            </StackPanel>
+
+            <ScrollViewer x:Name="PART_GridScroll" Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+                <WrapPanel x:Name="PART_Grid" Orientation="Horizontal" />
+            </ScrollViewer>
+        </Grid>
+
+
+        <!--  tag sidebar  -->
+        <Grid
+            Grid.Column="2"
+            Margin="12,0,0,0"
+            RowDefinitions="Auto,Auto,*">
+            <StackPanel
+                Grid.Row="0"
+                Margin="0,0,0,4"
+                Orientation="Horizontal"
+                Spacing="4">
+                <TextBox
+                    x:Name="PART_TxtSearch"
+                    MinWidth="150"
+                    HorizontalAlignment="Stretch" />
+                <ui:PhButton
+                    x:Name="PART_BtnAddName"
+                    MinWidth="30"
+                    HorizontalContentAlignment="Center" />
+            </StackPanel>
+
+            <ui:PhTextBlock
+                Grid.Row="1"
+                Margin="2,0,0,4"
+                Opacity="0.5"
+                Text="RENAME TO" />
+
+            <ScrollViewer Grid.Row="2">
+                <StackPanel x:Name="PART_NamesList" Orientation="Vertical" Spacing="2" />
+            </ScrollViewer>
+        </Grid>
+
+    </Grid>
+</ui:PhControl>

@@ -475,6 +475,8 @@
                             <ui:PhMenuItem x:Name="PART_MnuTools" LangKey="Menu_MnuTools">
                                 <ui:PhMenuItem Click="MainMenuItem_Click" LangKey="Menu_MnuColorPicker" />
                                 <ui:PhMenuItem Click="MainMenuItem_Click" LangKey="Menu_MnuCropTool" />
+                                <ui:PhMenuItem Click="MainMenuItem_Click" LangKey="Menu_MnuQuickCrop" />
+                                <ui:PhMenuItem Click="MainMenuItem_Click" LangKey="Menu_MnuRenamer" />
                                 <ui:PhMenuItem Click="MainMenuItem_Click" LangKey="Menu_MnuFrameNav" />
                                 <ui:PhMenuItem Click="MainMenuItem_Click" LangKey="Menu_MnuHdrToneMapper" />
                                 <ui:PhMenuItem Click="MainMenuItem_Click" LangKey="Menu_MnuResizeTool" />

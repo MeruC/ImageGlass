@@ -104,6 +104,7 @@ public partial class MainWindowView : PhControl
         PART_BtnMotionVideo.Click += PART_BtnMotionVideo_Click;
         UpdateMotionButtonTooltip();
         UpdateMotionButtonState();
+        UpdateFullHostState();
 
         // hook viewer events for external tool broadcasting
         PART_Viewer.PhotoLoading += Core.Viewer_PhotoLoadingForPlugins;
@@ -417,7 +418,32 @@ public partial class MainWindowView : PhControl
         if (e.Property == ToolHostControl.PluginContentProperty)
         {
             UpdateMotionButtonState();
+            UpdateFullHostState();
         }
+    }
+
+
+    /// <summary>
+    /// Gives the tool host the whole window (viewer and bottom gallery hidden) for a tool whose
+    /// own content needs more room than the single current image does, e.g. a folder-wide grid.
+    /// </summary>
+    private void UpdateFullHostState()
+    {
+        var prefersFull = PART_ToolHost.Tool?.PrefersFullHost ?? false;
+
+        PART_ViewerWrapper.RowDefinitions[0].Height = prefersFull
+            ? new GridLength(0)
+            : new GridLength(1, GridUnitType.Star);
+
+        PART_ViewerWrapper.RowDefinitions[1].Height = prefersFull
+            ? new GridLength(1, GridUnitType.Star)
+            : GridLength.Auto;
+
+        // the bottom filmstrip gallery lives in PART_Layout row 2; a side-positioned gallery
+        // (columns) isn't affected here
+        PART_Layout.RowDefinitions[2].Height = prefersFull
+            ? new GridLength(0)
+            : GridLength.Auto;
     }
 
 

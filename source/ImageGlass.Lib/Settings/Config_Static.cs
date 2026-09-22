@@ -245,6 +245,24 @@ public partial class Config
             ConfigBindingValue = CropImageToolControl.TOOL_ID,
             OnClick = new(LangId.Menu_MnuCropTool, API.IG_ToggleTool, CropImageToolControl.TOOL_ID),
         },
+        // quick crop
+        new() {
+            Id = "Btn_QuickCrop",
+            Image = nameof(IgThemeIcon.Crop),
+            Text = Lang.KeysMap[LangId.Menu_MnuQuickCrop],
+            ConfigBinding = nameof(Config.LastOpenedTool),
+            ConfigBindingValue = QuickCropToolControl.TOOL_ID,
+            OnClick = new(LangId.Menu_MnuQuickCrop, API.IG_ToggleTool, QuickCropToolControl.TOOL_ID),
+        },
+        // renamer
+        new() {
+            Id = "Btn_Renamer",
+            Image = nameof(IgThemeIcon.Edit),
+            Text = Lang.KeysMap[LangId.Menu_MnuRenamer],
+            ConfigBinding = nameof(Config.LastOpenedTool),
+            ConfigBindingValue = RenamerToolControl.TOOL_ID,
+            OnClick = new(LangId.Menu_MnuRenamer, API.IG_ToggleTool, RenamerToolControl.TOOL_ID),
+        },
         // color picker
         new() {
             Id = $"Btn_{nameof(IgThemeIcon.ColorPicker)}",

@@ -802,6 +802,7 @@ public enum LangId
     Tool_Crop_BtnSaveAs,
     Tool_Crop_BtnCrop,
     Tool_Crop_BtnCopy,
+    Tool_Crop_ChkBackupOriginal,
 
 
     // Crop settings
@@ -816,6 +817,50 @@ public enum LangId
     Tool_Crop_DefaultSelectionType_SelectAll,
     Tool_Crop_DefaultSelectionType_CustomArea,
     #endregion // Tool: Crop
+
+
+    #region Tool: Quick Crop
+    Menu_MnuQuickCrop,
+
+    Tool_QuickCrop_BtnLockSize,
+    Tool_QuickCrop_BtnAxisHorizontal,
+    Tool_QuickCrop_BtnAxisVertical,
+    Tool_QuickCrop_BtnSave,
+    Tool_QuickCrop_BtnBrowse,
+    Tool_QuickCrop_LblSaveFolder,
+
+    Tool_QuickCrop_StatusHint,
+    Tool_QuickCrop_StatusNoSelection,
+    Tool_QuickCrop_StatusNoImage,
+    Tool_QuickCrop_StatusLockFirst,
+    Tool_QuickCrop_StatusSaved,
+    Tool_QuickCrop_StatusSaveError,
+    Tool_QuickCrop_StatusFolderError,
+    #endregion // Tool: Quick Crop
+
+
+    #region Tool: Renamer
+    Menu_MnuRenamer,
+
+    Tool_Renamer_BtnSave,
+    Tool_Renamer_BtnUndo,
+    Tool_Renamer_BtnAddName,
+    Tool_Renamer_ChkPreview,
+    Tool_Renamer_LblZoom,
+    Tool_Renamer_TxtSearchPlaceholder,
+
+    Tool_Renamer_StatusImageCount,
+    Tool_Renamer_StatusSelectedCount,
+    Tool_Renamer_StatusStagedCount,
+    Tool_Renamer_StatusSelectFirst,
+    Tool_Renamer_StatusSaved,
+    Tool_Renamer_StatusSaveError,
+
+    Tool_Renamer_ConfirmSaveTitle,
+    Tool_Renamer_ConfirmSaveDescription,
+    Tool_Renamer_ConfirmOverwriteTitle,
+    Tool_Renamer_ConfirmOverwriteDescription,
+    #endregion // Tool: Renamer
 
 
     #region Tool: HDR tone mapper

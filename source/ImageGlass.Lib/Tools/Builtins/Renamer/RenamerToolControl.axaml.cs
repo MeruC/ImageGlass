@@ -568,13 +568,20 @@ public partial class RenamerToolControl : PhControl, IToolControl
 
         var changed = _selection.Select(i => (i, _items[i].PendingName)).ToList();
 
-        // always numbered, whether it's one image or several, and always continuing from
-        // whatever's already staged/saved under this name — so re-clicking "char" after
-        // char1/char2 are already staged produces char3, not another bare "char"
-        var start = NextAvailable(baseName, _selection);
-        for (var i = 0; i < _selection.Count; i++)
+        // a single image gets the bare name the first time a tag is used; once that name (bare
+        // or numbered) is taken, every further use — single or multi — numbers from 1 up,
+        // continuing whatever's already staged/saved under this name
+        if (_selection.Count == 1 && !IsNameTaken(baseName, _selection))
         {
-            _items[_selection[i]].PendingName = $"{baseName}{start + i}.webp";
+            _items[_selection[0]].PendingName = $"{baseName}.webp";
+        }
+        else
+        {
+            var start = NextAvailable(baseName, _selection);
+            for (var i = 0; i < _selection.Count; i++)
+            {
+                _items[_selection[i]].PendingName = $"{baseName}{start + i}.webp";
+            }
         }
 
         _undoStack.Add(changed);
@@ -622,8 +629,42 @@ public partial class RenamerToolControl : PhControl, IToolControl
     private int NextAvailable(string baseName, IReadOnlyCollection<int> skipIndices)
     {
         var highest = 0;
-        var outDir = Path.Combine(_folder, "output");
 
+        foreach (var stem in ExistingStems(baseName, skipIndices))
+        {
+            if (int.TryParse(stem.AsSpan(baseName.Length), out var n))
+            {
+                highest = Math.Max(highest, n);
+            }
+        }
+
+        return highest + 1;
+    }
+
+
+    /// <summary>
+    /// Whether <paramref name="baseName"/> is already used — bare ("char.webp") or numbered
+    /// ("char1.webp") — by an existing output file or another staged item.
+    /// </summary>
+    private bool IsNameTaken(string baseName, IReadOnlyCollection<int> skipIndices)
+    {
+        foreach (var stem in ExistingStems(baseName, skipIndices))
+        {
+            if (stem.Length == baseName.Length) return true; // exact bare match
+            if (int.TryParse(stem.AsSpan(baseName.Length), out _)) return true;
+        }
+
+        return false;
+    }
+
+
+    /// <summary>
+    /// Yields the filename stems (no extension) of every existing output file and every other
+    /// staged item that starts with <paramref name="baseName"/>, skipping <paramref name="skipIndices"/>.
+    /// </summary>
+    private IEnumerable<string> ExistingStems(string baseName, IReadOnlyCollection<int> skipIndices)
+    {
+        var outDir = Path.Combine(_folder, "output");
         if (Directory.Exists(outDir))
         {
             foreach (var f in Directory.EnumerateFiles(outDir))
@@ -631,11 +672,7 @@ public partial class RenamerToolControl : PhControl, IToolControl
                 if (!Path.GetExtension(f).Equals(".webp", StringComparison.OrdinalIgnoreCase)) continue;
 
                 var stem = Path.GetFileNameWithoutExtension(f);
-                if (stem.StartsWith(baseName, StringComparison.Ordinal)
-                    && int.TryParse(stem.AsSpan(baseName.Length), out var n))
-                {
-                    highest = Math.Max(highest, n);
-                }
+                if (stem.StartsWith(baseName, StringComparison.Ordinal)) yield return stem;
             }
         }
 
@@ -646,14 +683,8 @@ public partial class RenamerToolControl : PhControl, IToolControl
             if (_items[i].PendingName is not { } pending) continue;
 
             var stem = Path.GetFileNameWithoutExtension(pending);
-            if (stem.StartsWith(baseName, StringComparison.Ordinal)
-                && int.TryParse(stem.AsSpan(baseName.Length), out var n))
-            {
-                highest = Math.Max(highest, n);
-            }
+            if (stem.StartsWith(baseName, StringComparison.Ordinal)) yield return stem;
         }
-
-        return highest + 1;
     }
 
     #endregion // Staging

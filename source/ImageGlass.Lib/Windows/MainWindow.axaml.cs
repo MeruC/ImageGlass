@@ -114,8 +114,19 @@ public partial class MainWindow : PhWindow
             // also clear the persisted value itself: toolbar buttons bound to LastOpenedTool
             // (e.g. ConfigBindingValue="Tool_Renamer") would otherwise show highlighted for a
             // tool that never actually opened
+            var skippedTool = lastTool;
             lastTool = "";
             Core.Config.LastOpenedTool = "";
+
+            // and set it directly too — this runs this early in startup, before it's certain the
+            // toolbar has finished wiring up its reactive Config.PropertyChanged subscription
+            foreach (var btn in Core.Config.ToolbarButtons)
+            {
+                if (btn.ConfigBindingValue == skippedTool)
+                {
+                    btn.IsChecked = false;
+                }
+            }
         }
 
         _ = await Core.API.RunApiAsync(API.IG_OpenTool, lastTool);

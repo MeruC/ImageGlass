@@ -1,0 +1,33 @@
+<ui:PhControl
+    x:Class="ImageGlass.Common.Windows.MenuHotkeysEditorControl"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="using:ImageGlass.UI"
+    mc:Ignorable="d"
+    d:DesignWidth="800"
+    HorizontalAlignment="Stretch">
+
+    <Grid HorizontalAlignment="Stretch">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <StackPanel Orientation="Vertical" Spacing="10">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <ui:PhSearchBoxControl x:Name="PART_Search" Width="250" />
+
+                <ui:PhButton
+                    x:Name="PART_Reset"
+                    VerticalAlignment="Center"
+                    Variant="Link" />
+            </StackPanel>
+
+            <!--  Hotkeys table (rows built in code-behind)  -->
+            <ui:PhTableControl x:Name="PART_Table" HorizontalAlignment="Stretch" />
+
+        </StackPanel>
+    </Grid>
+
+</ui:PhControl>

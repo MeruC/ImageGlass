@@ -22,17 +22,20 @@ using ImageGlass.Common.Types;
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.InteropServices;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace ImageGlass.Mac.Common.ServiceProviders;
 
-internal partial class MacShellProvider : PhDisposable, IShellProvider
+internal class MacShellProvider : PhDisposable, IShellProvider
 {
-    private static readonly string _bundleId = $"com.duongdieuphap.imageglass";
-
-
     public object? ForegroundShell { get; set; }
+
+
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public string InstallChannelId => "dmg";
 
 
     /// <summary>
@@ -41,6 +44,7 @@ internal partial class MacShellProvider : PhDisposable, IShellProvider
     protected override void OnDisposing()
     {
         base.OnDisposing();
+        AllowSleep();
         ForegroundShell = null;
     }
 
@@ -169,7 +173,7 @@ internal partial class MacShellProvider : PhDisposable, IShellProvider
     /// <inheritdoc/>
     /// </summary>
     /// <exception cref="NotSupportedException"></exception>
-    public Task SetDefaultPhotoViewerAsync(string[] extensions, bool enable)
+    public Task<DefaultAppScope?> SetDefaultPhotoViewerAsync(string[] extensions, bool enable)
     {
         throw new NotSupportedException("IGE: This feature is not supported on macOS.");
     }
@@ -217,44 +221,52 @@ internal partial class MacShellProvider : PhDisposable, IShellProvider
     }
 
 
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public void ShowShare(nint windowHandle, string[] filePaths)
+    {
+        ArgumentNullException.ThrowIfNull(filePaths);
+        if (filePaths.Length == 0) return;
+
+        // build a comma-separated list of POSIX file references for AppleScript
+        var fileList = string.Join(", ",
+            filePaths.Select(f => $"(POSIX file \"{f}\" as alias)"));
+
+        // reveal and select the files in Finder, then trigger the Share menu
+        RunAppleScript(
+            "tell application \"Finder\"\n" +
+            $"select {{{fileList}}}\n" +
+            "activate\n" +
+            "end tell\n" +
+            "tell application \"System Events\"\n" +
+            "tell process \"Finder\"\n" +
+            "click menu item \"Share…\" of menu \"File\" of menu bar 1\n" +
+            "end tell\n" +
+            "end tell");
+    }
+
+
 
     /// <summary>
     /// <inheritdoc/>
     /// </summary>
-    public bool HasPreciseScrollingDeltas()
-    {
-        var app = objc_msgSend(_nsAppClass.Value, _sharedAppSel.Value);
-        var currentEvent = objc_msgSend(app, _currentEventSel.Value);
-        if (currentEvent == 0) return false;
+    public bool HasPreciseScrollingDeltas() => MacEventApi.HasPreciseScrollingDeltas();
 
-        return objc_msgSend_bool(currentEvent, _hasPreciseSel.Value);
-    }
+
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public void PreventSleep(string reason) => MacPowerApi.PreventSleep(reason);
+
+
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public void AllowSleep() => MacPowerApi.AllowSleep();
 
 
     #region Private helpers
-
-    #region ObjC runtime interop
-
-    [LibraryImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_msgSend")]
-    private static partial nint objc_msgSend(nint receiver, nint selector);
-
-    [LibraryImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_msgSend")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool objc_msgSend_bool(nint receiver, nint selector);
-
-    [LibraryImport("/usr/lib/libobjc.dylib", StringMarshalling = StringMarshalling.Utf8)]
-    private static partial nint sel_registerName(string name);
-
-    [LibraryImport("/usr/lib/libobjc.dylib", StringMarshalling = StringMarshalling.Utf8)]
-    private static partial nint objc_getClass(string name);
-
-    private static readonly Lazy<nint> _sharedAppSel = new(() => sel_registerName("sharedApplication"));
-    private static readonly Lazy<nint> _currentEventSel = new(() => sel_registerName("currentEvent"));
-    private static readonly Lazy<nint> _hasPreciseSel = new(() => sel_registerName("hasPreciseScrollingDeltas"));
-    private static readonly Lazy<nint> _nsAppClass = new(() => objc_getClass("NSApplication"));
-
-    #endregion // ObjC runtime interop
-
 
     /// <summary>
     /// Executes an AppleScript expression via <c>osascript</c>.

@@ -69,9 +69,7 @@ const configs = {
     new ESLintPlugin({
       cache: true,
       eslintPath: require.resolve('eslint'),
-      resolvePluginsRelativeTo: __dirname,
       ignore: true,
-      useEslintrc: true,
       extensions: ['ts', 'js'],
     }),
     new CleanWebpackPlugin({

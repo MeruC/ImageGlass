@@ -3,23 +3,29 @@
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:ImageGlass.UI"
-    RequestedThemeVariant="Default"
-    Name="ImageGlass">
+    Name="ImageGlass"
+    RequestedThemeVariant="Default">
 
-    <!--  macOS application (⌘) menu.
-        Items are declared here so they exist at startup
-        and Avalonia composes them with its standard system items (Services, Hide, Quit).
-        Headers are localized in code-behind (see App.LocalizeAppMenu).  -->
+    <!--  macOS application menu  -->
     <NativeMenu.Menu>
         <NativeMenu>
             <NativeMenuItem
                 Click="AppMenuAbout_Click"
-                CommandParameter="FrmMain_MnuAbout"
+                CommandParameter="Menu_MnuAbout"
                 Header="About ImageGlass" />
             <NativeMenuItemSeparator />
             <NativeMenuItem
+                Click="AppMenuUpgradeLicense_Click"
+                CommandParameter="Menu_MnuUpgradeLicense"
+                Header="Upgrade to ImageGlass Pro" />
+            <NativeMenuItem
+                Click="AppMenuManageLicense_Click"
+                CommandParameter="Menu_MnuManageLicense"
+                Header="Manage Pro license" />
+            <NativeMenuItemSeparator />
+            <NativeMenuItem
                 Click="AppMenuSettings_Click"
-                CommandParameter="FrmMain_MnuSettings"
+                CommandParameter="Menu_MnuSettings"
                 Header="Settings…" />
         </NativeMenu>
     </NativeMenu.Menu>
@@ -29,117 +35,17 @@
     <Application.Styles>
         <FluentTheme />
         <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
-
-
-        <!--  Menu Dropdown animation  -->
-        <Style Selector="MenuFlyoutPresenter, ContextMenu, ToolTip, Popup">
-            <!--  1. Initialize the transform so the animator has something to target  -->
-            <Setter Property="RenderTransform">
-                <ScaleTransform ScaleX="0.95" ScaleY="0.95" />
-            </Setter>
-
-            <Style.Animations>
-                <Animation Easing="CubicEaseOut" Duration="0:0:0.15">
-                    <KeyFrame Cue="0%">
-                        <Setter Property="Opacity" Value="0.0" />
-                        <!--  2. Target the specific properties of the ScaleTransform  -->
-                        <Setter Property="ScaleTransform.ScaleX" Value="0.95" />
-                        <Setter Property="ScaleTransform.ScaleY" Value="0.95" />
-                    </KeyFrame>
-                    <KeyFrame Cue="100%">
-                        <Setter Property="Opacity" Value="1.0" />
-                        <Setter Property="ScaleTransform.ScaleX" Value="1.0" />
-                        <Setter Property="ScaleTransform.ScaleY" Value="1.0" />
-                    </KeyFrame>
-                </Animation>
-            </Style.Animations>
-        </Style>
-
-
-
-        <!--  Context Menu shadow  -->
-        <Style Selector="MenuFlyoutPresenter > Border, ContextMenu > Border, ToolTip > Border, Popup > Border">
-            <Setter Property="Margin" Value="6, 1, 6, 12" />
-            <Setter Property="BoxShadow" Value="{DynamicResource MenuShadow}" />
-        </Style>
-
-
-
-        <!--  Menu separator  -->
-        <Style Selector="Separator">
-            <Setter Property="Background" Value="{DynamicResource IG_MenuSeparatorBackground}" />
-        </Style>
-
-
-
-        <!--  Menu item  -->
-        <Style Selector="MenuItem">
-            <Setter Property="Margin" Value="4, 0" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="{DynamicResource ControlCornerRadius}" />
-
-
-            <!--  Menu item content  -->
-            <Style Selector="^ /template/ Border#PART_LayoutRoot">
-                <Setter Property="Transitions">
-                    <Transitions>
-                        <BrushTransition Property="Background" Duration="0:0:0.05" />
-                        <BrushTransition Property="BorderBrush" Duration="0:0:0.05" />
-                    </Transitions>
-                </Setter>
-            </Style>
-
-            <!--  Fixed: check mark is cut off  -->
-            <Style Selector="^:checked:toggle /template/ ContentControl#PART_ToggleIconPresenter Path">
-                <Setter Property="Width" Value="14" />
-                <Setter Property="Stretch" Value="Uniform" />
-            </Style>
-
-            <Style Selector="^:selected /template/ Border#PART_LayoutRoot">
-                <Setter Property="BorderBrush" Value="{DynamicResource IG_ToolButtonBackgroundHover}" />
-            </Style>
-        </Style>
-
-
-
-        <!--  ComboBoxItem  -->
-        <Style Selector="ComboBoxItem">
-            <Setter Property="Margin" Value="4, 0" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="{DynamicResource ControlCornerRadius}" />
-
-            <Style Selector="^ /template/ PathIcon#DropDownGlyph">
-                <Setter Property="Width" Value="10" />
-                <Setter Property="Height" Value="10" />
-            </Style>
-        </Style>
-
-
-
-        <!--  Fixed: focus style  -->
-        <Style Selector="Button, ToggleButton, CheckBox, RadioButton, TextBox, SelectableTextBlock, ComboBox, ContextMenu, MenuItem">
-            <Setter Property="FocusAdorner">
-                <FocusAdornerTemplate>
-                    <Border
-                        BorderBrush="{DynamicResource SystemControlForegroundBaseHighBrush}"
-                        BorderThickness="2"
-                        CornerRadius="{DynamicResource ControlCornerRadius}">
-                        <Border
-                            BorderBrush="{DynamicResource SystemControlBackgroundAltHighBrush}"
-                            BorderThickness="1"
-                            CornerRadius="{DynamicResource ControlCornerRadius}" />
-                    </Border>
-                </FocusAdornerTemplate>
-            </Setter>
-        </Style>
-
-
-        <!--  Disabled style for buttons  -->
-        <Style Selector="Button:disabled /template/ ContentPresenter#PART_ContentPresenter, ToggleButton:disabled /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Opacity" Value="0.5" />
-        </Style>
+        <StyleInclude Source="avares://ImageGlass.Lib/UI/Styles/ButtonStyle.axaml" />
+        <StyleInclude Source="avares://ImageGlass.Lib/UI/Styles/ComboBoxStyle.axaml" />
+        <StyleInclude Source="avares://ImageGlass.Lib/UI/Styles/TextBoxStyle.axaml" />
+        <StyleInclude Source="avares://ImageGlass.Lib/UI/Styles/NumericUpDownStyle.axaml" />
+        <StyleInclude Source="avares://ImageGlass.Lib/UI/Styles/CheckBoxStyle.axaml" />
+        <StyleInclude Source="avares://ImageGlass.Lib/UI/Styles/RadioButtonStyle.axaml" />
+        <StyleInclude Source="avares://ImageGlass.Lib/UI/Styles/ToggleSwitchStyle.axaml" />
+        <StyleInclude Source="avares://ImageGlass.Lib/UI/Styles/MenuStyle.axaml" />
+        <StyleInclude Source="avares://ImageGlass.Lib/UI/Styles/ListBoxItemStyle.axaml" />
+        <StyleInclude Source="avares://ImageGlass.Lib/UI/Styles/TabControlStyle.axaml" />
+        <StyleInclude Source="avares://ImageGlass.Lib/UI/Styles/ControlStyle.axaml" />
 
     </Application.Styles>
 
@@ -148,46 +54,14 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://ImageGlass.Lib/UI/Styles/CommonResources.axaml" />
+                <ResourceInclude Source="avares://ImageGlass.Lib/UI/Styles/ToggleSwitchResources.axaml" />
                 <ResourceInclude Source="avares://ImageGlass.Lib/UI/Styles/IconResources.axaml" />
-                <ResourceInclude Source="avares://ImageGlass.Lib/UI/Styles/ScrollBarStyle.axaml" />
+                <ResourceInclude Source="avares://ImageGlass.Lib/UI/Styles/ScrollBarResources.axaml" />
+                <ResourceInclude Source="avares://ImageGlass.Lib/UI/Styles/MenuResources.axaml" />
+                <ResourceInclude Source="avares://ImageGlass.Lib/UI/Styles/ComboBoxResources.axaml" />
+                <ResourceInclude Source="avares://ImageGlass.Lib/UI/Styles/SliderStyle.axaml" />
             </ResourceDictionary.MergedDictionaries>
-
-
-            <ResourceDictionary.ThemeDictionaries>
-                <ResourceDictionary x:Key="Light">
-                    <BoxShadows x:Key="MenuShadow">0 6 12 0 #40000000</BoxShadows>
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="Dark">
-                    <BoxShadows x:Key="MenuShadow">0 6 12 0 #60000000</BoxShadows>
-                </ResourceDictionary>
-            </ResourceDictionary.ThemeDictionaries>
-
-            <!--  Corner Radius  -->
-            <CornerRadius x:Key="ControlCornerRadius">7</CornerRadius>
-            <CornerRadius x:Key="OverlayCornerRadius">10</CornerRadius>
-
-            <!--  Menu item spacing  -->
-            <Thickness x:Key="MenuFlyoutSeparatorThemePadding">0,4</Thickness>
-            <Thickness x:Key="MenuFlyoutItemThemePaddingNarrow">8,4,8,4</Thickness>
-            <Thickness x:Key="MenuInputGestureTextMargin">6,0,0,0</Thickness>
-            <Thickness x:Key="MenuIconPresenterMargin">0,0,6,0</Thickness>
-            <Thickness x:Key="MenuFlyoutItemChevronMargin">6,0,0,0</Thickness>
-
-            <!--  Combobox  -->
-            <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="{DynamicResource SystemAltMediumLowColor}" />
-            <SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="{DynamicResource SystemAccentColor}" />
-            <Thickness x:Key="ComboBoxItemThemePadding">8,3,8,5</Thickness>
-
-            <!--  Tooltip  -->
-            <x:Double x:Key="ToolTipContentThemeFontSize">13</x:Double>
-            <x:Double x:Key="ToolTipContentMaxWidth">500</x:Double>
-
-            <!--  Text selection color  -->
-            <SolidColorBrush
-                x:Key="TextControlSelectionHighlightColor"
-                Opacity="0.4"
-                Color="{DynamicResource SystemAccentColor}" />
-
         </ResourceDictionary>
     </Application.Resources>
 

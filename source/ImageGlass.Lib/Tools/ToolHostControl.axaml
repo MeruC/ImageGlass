@@ -32,12 +32,11 @@
             <!--  The slot for hosted tool content  -->
             <ContentControl
                 Grid.Column="0"
-                BorderBrush="{DynamicResource IG_BorderNeutralBrush}"
                 BorderThickness="0,1"
                 Content="{CompiledBinding #Root.Tool}" />
 
 
-            <!--  Close button  -->
+            <!--  Action buttons  -->
             <StackPanel
                 Margin="4"
                 HorizontalAlignment="Right"
@@ -52,14 +51,13 @@
                     Click="PART_BtnClose_Click"
                     ToolTip.Tip="{CompiledBinding #Root.CloseButtonTooltipText}">
                     <Path
-                        Width="10"
-                        Height="10"
+                        Width="12"
+                        Height="12"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
                         Data="{StaticResource IconClose}"
-                        Stretch="Uniform"
-                        Stroke="{DynamicResource IG_ThemeForegroundBrush}"
-                        StrokeThickness="1" />
+                        Fill="{DynamicResource IG_ThemeForegroundBrush}"
+                        Stretch="Uniform" />
                 </ui:PhToolButton>
 
                 <!--  Settings button  -->
@@ -80,6 +78,9 @@
                         Stroke="{DynamicResource IG_ThemeForegroundBrush}"
                         StrokeThickness="1" />
                 </ui:PhToolButton>
+
+                <!--  Pro badge  -->
+                <ui:PhProBadge IsVisible="{CompiledBinding #Root.IsProPreview}" />
             </StackPanel>
         </Grid>
     </ui:PhControl.Content>

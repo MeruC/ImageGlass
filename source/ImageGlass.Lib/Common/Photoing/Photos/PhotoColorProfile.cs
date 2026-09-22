@@ -33,51 +33,66 @@ public partial class PhotoColorProfile(byte[]? data)
     {
         if (ProfileData is null) return string.Empty;
 
-        // ICC profiles contain a "desc" tag with a text description.
-        // It starts with 4 bytes tag count, then entries.
         try
         {
-            // number of tags is a big-endian 32-bit integer at offset 128
+            // header is 128 bytes, then a big-endian tag count and 12-byte tag records
             var tagCount = ReadBE32__(ProfileData, 128);
 
-            // each tag record = 12 bytes: [4-byte tag sig][4-byte offset][4-byte size]
-            for (int i = 132; i < 132 + tagCount * 12; i += 12)
+            for (var i = 132; i + 12 <= ProfileData.Length && i < 132 + tagCount * 12; i += 12)
             {
-                string tag = System.Text.Encoding.ASCII.GetString(ProfileData, i, 4);
-                int offset = ReadBE32__(ProfileData, i + 4);
-                int size = ReadBE32__(ProfileData, i + 8);
+                var tag = System.Text.Encoding.ASCII.GetString(ProfileData, i, 4);
+                if (tag != "desc") continue;
 
-                if (tag == "desc")
+                var offset = ReadBE32__(ProfileData, i + 4);
+                var size = ReadBE32__(ProfileData, i + 8);
+                if (offset < 0 || size < 8 || offset + size > ProfileData.Length) return string.Empty;
+
+                // the element's own type signature decides the layout, not the tag signature:
+                // ICC v2 stores "desc" (textDescription), v4 stores "mluc" (multiLocalizedUnicode)
+                var elementType = System.Text.Encoding.ASCII.GetString(ProfileData, offset, 4);
+
+                return elementType switch
                 {
-                    // ASCII description
-                    int asciiLength = ReadBE32__(ProfileData, offset + 8);
-                    return System.Text.Encoding.ASCII.GetString(ProfileData, offset + 12, asciiLength - 1);
-                }
-                else if (tag == "mluc")
-                {
-                    // unicode (UTF-16BE) localized description
-                    int recordCount = ReadBE32__(ProfileData, offset + 8);
-                    int recordSize = ReadBE32__(ProfileData, offset + 12);
-
-                    if (recordCount > 0)
-                    {
-                        // first record (usually English)
-                        int firstRecord = offset + 16;
-                        int stringLength = ReadBE32__(ProfileData, firstRecord + 8);
-                        int stringOffset = ReadBE32__(ProfileData, firstRecord + 12);
-
-                        return System.Text.Encoding.BigEndianUnicode.GetString(
-                            ProfileData,
-                            offset + stringOffset,
-                            stringLength
-                        );
-                    }
-                }
+                    "desc" => ReadTextDescription__(ProfileData, offset, size),
+                    "mluc" => ReadMultiLocalizedUnicode__(ProfileData, offset, size),
+                    _ => string.Empty,
+                };
             }
         }
         catch { }
 
         return string.Empty;
+    }
+
+
+    /// <summary>
+    /// Reads an ICC v2 <c>textDescription</c>: count then a NUL-terminated ASCII string.
+    /// </summary>
+    private static string ReadTextDescription__(byte[] data, int offset, int size)
+    {
+        var length = ReadBE32__(data, offset + 8);
+        if (length <= 1 || 12 + length > size) return string.Empty;
+
+        // the stored count includes the terminating NUL
+        return System.Text.Encoding.ASCII.GetString(data, offset + 12, length - 1);
+    }
+
+
+    /// <summary>
+    /// Reads an ICC v4 <c>multiLocalizedUnicode</c>, taking its first (normally English) record.
+    /// </summary>
+    private static string ReadMultiLocalizedUnicode__(byte[] data, int offset, int size)
+    {
+        var recordCount = ReadBE32__(data, offset + 8);
+        var recordSize = ReadBE32__(data, offset + 12);
+        if (recordCount <= 0 || recordSize < 12 || 16 + recordSize > size) return string.Empty;
+
+        // record: 2-byte language, 2-byte country, 4-byte length, 4-byte offset from the element
+        var strLength = ReadBE32__(data, offset + 16 + 4);
+        var strOffset = ReadBE32__(data, offset + 16 + 8);
+        if (strLength <= 0 || strOffset < 0 || strOffset + strLength > size) return string.Empty;
+
+        return System.Text.Encoding.BigEndianUnicode.GetString(data, offset + strOffset, strLength);
     }
 
 

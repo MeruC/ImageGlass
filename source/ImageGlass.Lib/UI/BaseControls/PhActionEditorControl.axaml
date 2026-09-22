@@ -1,0 +1,51 @@
+<ui:PhControl
+    x:Class="ImageGlass.UI.PhActionEditorControl"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:types="using:ImageGlass.Common.Types"
+    xmlns:ui="using:ImageGlass.UI"
+    mc:Ignorable="d"
+    d:DesignWidth="450">
+
+    <StackPanel Orientation="Vertical" Spacing="14">
+
+        <!--  Executable + Browse  -->
+        <StackPanel Spacing="5">
+            <ui:PhTextBlock LangKey="_Executable" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <ui:PhTextBox
+                    x:Name="PART_Executable"
+                    Grid.Column="0"
+                    IsRequired="True" />
+                <!--  fixed height to match the textbox  -->
+                <ui:PhButton
+                    x:Name="PART_Browse"
+                    Grid.Column="1"
+                    Height="32"
+                    VerticalAlignment="Top"
+                    IconData="{StaticResource IconFolderOpen}" />
+            </Grid>
+        </StackPanel>
+
+        <!--  Argument  -->
+        <StackPanel Spacing="5">
+            <ui:PhTextBlock LangKey="_Argument" />
+            <ui:PhTextBox
+                x:Name="PART_Argument"
+                FontFamily="{x:Static types:Const.FONT_CODE}"
+                TextWrapping="Wrap" />
+        </StackPanel>
+
+        <!--  Hotkeys (hidden for a plain SingleAction)  -->
+        <StackPanel x:Name="PART_HotkeysSection" Spacing="5">
+            <ui:PhTextBlock LangKey="_Hotkeys" />
+            <ui:PhHotkeyPicker x:Name="PART_Hotkeys" />
+        </StackPanel>
+
+        <!--  Command preview  -->
+        <ui:PhCommandPreview x:Name="PART_CommandPreview" />
+
+    </StackPanel>
+</ui:PhControl>

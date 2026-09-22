@@ -20,8 +20,9 @@
     <ParameterGroup>
       <OutputPath ParameterType="System.String" Required="true" />
       <Namespace ParameterType="System.String" Required="true" />
+      <Version ParameterType="System.String" Required="true" />
       <FullVersion ParameterType="System.String" Required="true" />
-      <ReleaseType ParameterType="System.String" Required="true" />
+      <ReleaseType ParameterType="System.String" Required="false" />
       <UpdateChannel ParameterType="System.String" Required="true" />
     </ParameterGroup>
     <Task>
@@ -34,7 +35,8 @@ var code = $$"""
     
     internal class AppBuildInfo : IAppBuildInfo
     {
-        public string AppVersion { get; } = "{{FullVersion}}";
+        public string Version { get; } = "{{Version}}";
+        public string FullVersion { get; } = "{{FullVersion}}";
         public string ReleaseType { get; } = "{{ReleaseType}}";
         public string UpdateChannel { get; } = "{{UpdateChannel}}";
     }
@@ -63,6 +65,7 @@ if (!System.IO.File.Exists(OutputPath) || System.IO.File.ReadAllText(OutputPath)
     <_GenerateVersionFile
         OutputPath="$(_AppBuildInfoFile)"
         Namespace="$(RootNamespace)"
+        Version="$(IgVersion)"
         FullVersion="$(IgFullVersion)"
         ReleaseType="$(IgReleaseType)"
         UpdateChannel="$(IgUpdateChannel)" />

@@ -1,0 +1,129 @@
+<ui:PhControl
+    x:Class="ImageGlass.Tools.HdrToneMapperToolControl"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="using:ImageGlass.UI"
+    mc:Ignorable="d"
+    d:DesignHeight="450"
+    d:DesignWidth="800"
+    x:Name="Root"
+    Padding="6,12,36,12">
+
+    <!--  Right padding keeps the content clear of the tool host's floating close button  -->
+    <StackPanel
+        x:Name="PART_RootPanel"
+        HorizontalAlignment="Center"
+        VerticalAlignment="Center"
+        Orientation="Horizontal"
+        Spacing="20">
+
+        <!--  Sliders: reflow 1x4 -> 2x2 -> 4x1 by width (columns set in code)  -->
+        <UniformGrid
+            x:Name="PART_SlidersGrid"
+            VerticalAlignment="Top"
+            Columns="4">
+
+            <!--  Exposure  -->
+            <StackPanel
+                MinWidth="160"
+                Margin="0,0,20,8"
+                Spacing="2">
+                <ui:PhTextBlock
+                    x:Name="PART_LblExposure"
+                    LangKey="Tool_Hdr_LblExposure"
+                    Opacity="0.6" />
+                <Slider
+                    x:Name="PART_SldExposure"
+                    IsSnapToTickEnabled="True"
+                    Maximum="5"
+                    Minimum="-5"
+                    TickFrequency="0.1" />
+            </StackPanel>
+
+            <!--  White point (nits)  -->
+            <StackPanel
+                MinWidth="160"
+                Margin="0,0,20,8"
+                Spacing="2">
+                <ui:PhTextBlock
+                    x:Name="PART_LblReferenceWhite"
+                    LangKey="Tool_Hdr_LblReferenceWhite"
+                    Opacity="0.6" />
+                <Slider
+                    x:Name="PART_SldReferenceWhite"
+                    IsSnapToTickEnabled="True"
+                    Maximum="1000"
+                    Minimum="50"
+                    TickFrequency="10" />
+            </StackPanel>
+
+            <!--  Highlight compression  -->
+            <StackPanel
+                MinWidth="160"
+                Margin="0,0,20,8"
+                Spacing="2">
+                <ui:PhTextBlock
+                    x:Name="PART_LblHighlightCompression"
+                    LangKey="Tool_Hdr_LblHighlightCompression"
+                    Opacity="0.6" />
+                <Slider
+                    x:Name="PART_SldHighlightCompression"
+                    IsSnapToTickEnabled="True"
+                    Maximum="1"
+                    Minimum="0"
+                    TickFrequency="0.05" />
+            </StackPanel>
+
+            <!--  Saturation  -->
+            <StackPanel
+                MinWidth="160"
+                Margin="0,0,20,8"
+                Spacing="2">
+                <ui:PhTextBlock
+                    x:Name="PART_LblSaturation"
+                    LangKey="Tool_Hdr_LblSaturation"
+                    Opacity="0.6" />
+                <Slider
+                    x:Name="PART_SldSaturation"
+                    IsSnapToTickEnabled="True"
+                    Maximum="2"
+                    Minimum="0"
+                    TickFrequency="0.05" />
+            </StackPanel>
+        </UniformGrid>
+
+
+        <!--  Mode + Reset: label on top (aligns with slider labels); combo+reset row below  -->
+        <StackPanel
+            x:Name="PART_ModeResetGroup"
+            VerticalAlignment="Top"
+            Spacing="2">
+            <ui:PhTextBlock
+                x:Name="PART_LblMode"
+                LangKey="Tool_Hdr_LblMode"
+                Opacity="0.6" />
+
+            <!--  combo + reset: side-by-side, stacks vertically when narrow (set in code)  -->
+            <StackPanel
+                x:Name="PART_ModeResetRow"
+                Orientation="Horizontal"
+                Spacing="8">
+                <ComboBox
+                    x:Name="PART_CmbMode"
+                    MinWidth="110"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Center" />
+                <ui:PhButton
+                    x:Name="PART_BtnReset"
+                    MinWidth="80"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Center"
+                    VerticalAlignment="Center"
+                    IconData="{StaticResource IconReset}" />
+            </StackPanel>
+        </StackPanel>
+
+    </StackPanel>
+</ui:PhControl>

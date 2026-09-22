@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 desktop desktop6 rescap">
+
+  <Identity Name="{{IDENTITY_NAME}}" Publisher="{{PUBLISHER}}" Version="{{VERSION}}" ProcessorArchitecture="{{ARCH}}" />
+
+  <Properties>
+    <DisplayName>ImageGlass</DisplayName>
+    <PublisherDisplayName>{{PUBLISHER_DISPLAY_NAME}}</PublisherDisplayName>
+    <Description>A Fast, Seamless Photo Viewer</Description>
+    <Logo>Assets\StoreLogo.png</Logo>
+    {{REGISTRY_VIRTUALIZATION}}
+  </Properties>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Applications>
+    <Application Id="IMAGEGLASS" Executable="ImageGlass\ImageGlass.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        BackgroundColor="transparent"
+        DisplayName="ImageGlass"
+        Square150x150Logo="Assets\IMAGEGLASS-Square150x150Logo.png"
+        Square44x44Logo="Assets\IMAGEGLASS-Square44x44Logo.png"
+        Description="A Fast, Seamless Photo Viewer">
+        <uap:DefaultTile
+          Wide310x150Logo="Assets\IMAGEGLASS-Wide310x150Logo.png"
+          Square310x310Logo="Assets\IMAGEGLASS-Square310x310Logo.png"
+          Square71x71Logo="Assets\IMAGEGLASS-Square71x71Logo.png" />
+      </uap:VisualElements>
+      <Extensions>
+        {{FILE_TYPE_ASSOCIATIONS}}
+        <desktop:Extension Category="windows.fullTrustProcess" Executable="ImageGlass\ImageGlass.exe" />
+        <uap3:Extension Category="windows.appExecutionAlias" EntryPoint="Windows.FullTrustApplication" Executable="ImageGlass\ImageGlass.exe">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="ImageGlass.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="imageglass" />
+        </uap:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="broadFileSystemAccess" />
+    <rescap:Capability Name="allowElevation" />
+    {{UNVIRTUALIZED_CAPABILITY}}
+  </Capabilities>
+</Package>

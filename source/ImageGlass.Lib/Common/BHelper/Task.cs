@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 using Avalonia.Threading;
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Runtime;
 using System.Threading;
 using System.Threading.Tasks;
@@ -72,20 +73,23 @@ public partial class BHelper
             oldCts.Dispose();
         }
 
-        // 2. Create new token
+        // 2. Create new token (capture the token struct so the continuation never touches the
+        // CTS getter, which throws ObjectDisposedException once a newer call disposes this cts)
         var cts = new CancellationTokenSource();
-        _tokens.TryAdd(key, cts);
+        var token = cts.Token;
+        _tokens[key] = cts;
 
         // 3. Start delay
-        Task.Delay(delayMs, cts.Token).ContinueWith(t =>
+        Task.Delay(delayMs, token).ContinueWith(t =>
         {
             // Check cancellation immediately upon waking
-            if (cts.Token.IsCancellationRequested) return;
+            if (token.IsCancellationRequested) return;
 
-            // Cleanup dictionary
-            if (_tokens.TryRemove(key, out var currentCts))
+            // Cleanup dictionary: only remove+dispose if we are still the active entry
+            // (never dispose a newer call's cts)
+            if (_tokens.TryRemove(new KeyValuePair<object, CancellationTokenSource>(key, cts)))
             {
-                currentCts.Dispose();
+                cts.Dispose();
             }
 
             // 4. Execute

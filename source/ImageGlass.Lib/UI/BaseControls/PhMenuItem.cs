@@ -18,9 +18,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using ImageGlass.Common;
 using ImageGlass.Common.Localization;
 using ImageGlass.Common.ServiceProviders;
@@ -32,6 +34,9 @@ namespace ImageGlass.UI;
 public class PhMenuItem : MenuItem
 {
     protected override Type StyleKeyOverride => typeof(MenuItem);
+
+    // whether the current disabled state came from a gate, not from the owner
+    private bool _disabledByGate;
 
 
     #region Public properties
@@ -138,23 +143,63 @@ public class PhMenuItem : MenuItem
 
 
     /// <summary>
-    /// Localize menu item text.
+    /// Localize menu item text. Public so an owner can re-localize items whose popup has never been
+    /// opened (they are not in the visual tree, so they never receive the language-changed event).
     /// </summary>
-    private void LocalizeText()
+    public void LocalizeText()
     {
         var localizedText = Core.Lang[LangKey, LangParams];
         if (string.IsNullOrWhiteSpace(localizedText)) return;
 
-        // Check if this menu item is locked
+        // admin-locked: forbidden
         if (FeatureManager.IsLocked(LangKey))
         {
             Header = $"{localizedText} 🔒";
-            IsEnabled = false;
+            Disable();
+        }
+        // Pro feature not yet unlocked: badged; disabled unless previewable
+        else if (FeatureManager.IsProGated(LangKey))
+        {
+            Header = new TextBlock
+            {
+                Inlines = new InlineCollection
+                {
+                    new Run(localizedText),
+                    new Run(" ✦") { Foreground = new SolidColorBrush(Core.AccentColor) },
+                },
+            };
+
+            if (FeatureManager.IsProBlocked(LangKey)) Disable();
+            else RestoreEnabled();
         }
         else
         {
             Header = localizedText;
+            RestoreEnabled();
         }
+    }
+
+
+    /// <summary>
+    /// Disables the item because of a gate (admin lock or Pro), remembering that we did it.
+    /// </summary>
+    private void Disable()
+    {
+        _disabledByGate = true;
+        IsEnabled = false;
+    }
+
+
+    /// <summary>
+    /// Re-enables the item only if a gate disabled it, so an owner-driven disabled state
+    /// (e.g. a menu item turned off for the current photo) is never clobbered.
+    /// </summary>
+    private void RestoreEnabled()
+    {
+        if (!_disabledByGate) return;
+
+        _disabledByGate = false;
+        IsEnabled = true;
     }
 
     #endregion // Control Methods

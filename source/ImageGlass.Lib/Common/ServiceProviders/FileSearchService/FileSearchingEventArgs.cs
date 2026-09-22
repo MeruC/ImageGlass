@@ -25,16 +25,11 @@ namespace ImageGlass.Common.ServiceProviders.FileSearchService;
 /// <summary>
 /// Event arguments for the <see cref="FileSearchProvider.FileSearching"/> event.
 /// </summary>
-public class FileSearchingEventArgs(IEnumerable<string> filePaths, bool isSearchEnded) : EventArgs
+public class FileSearchingEventArgs(IReadOnlyList<FileSearchEntry> entries) : EventArgs
 {
     /// <summary>
-    /// Gets the file paths that have been enumerated.
+    /// Gets the filesystem entries captured during enumeration.
     /// </summary>
-    public IEnumerable<string> Results { get; } = filePaths;
-
-    /// <summary>
-    /// Gets a value indicating whether the search operation has completed.
-    /// </summary>
-    public bool IsSearchEnded => isSearchEnded;
+    public IReadOnlyList<FileSearchEntry> Results { get; } = entries;
 
 }

@@ -1,0 +1,46 @@
+<windows:SettingsPageView
+    x:Class="ImageGlass.Common.Windows.PluginsSettingsView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="using:ImageGlass.UI"
+    xmlns:windows="using:ImageGlass.Common.Windows"
+    mc:Ignorable="d"
+    d:DesignWidth="600"
+    HorizontalAlignment="Stretch">
+
+    <StackPanel Orientation="Vertical" Spacing="10">
+
+        <!--  Add + Open folder + Get more plugins  -->
+        <StackPanel Orientation="Horizontal" Spacing="8">
+            <ui:PhButton
+                x:Name="PART_AddPlugin"
+                MinWidth="100"
+                HorizontalContentAlignment="Center"
+                Variant="Outline" />
+            <ui:PhButton x:Name="PART_OpenFolder" />
+            <ui:PhButton
+                x:Name="PART_GetMorePlugins"
+                VerticalAlignment="Center"
+                Variant="Link" />
+        </StackPanel>
+
+        <!--  Hint  -->
+        <Border
+            x:Name="PART_HintContainer"
+            Padding="12,8"
+            Background="{DynamicResource IG_BackgroundInfoBrush}"
+            CornerRadius="{DynamicResource ControlCornerRadius}"
+            DockPanel.Dock="Top"
+            IsVisible="False">
+            <ui:PhTextBlock x:Name="PART_InstallHint" TextWrapping="Wrap" />
+        </Border>
+
+
+        <!--  Plugins table (rows built in code-behind)  -->
+        <ui:PhTableControl x:Name="PART_Table" HorizontalAlignment="Stretch" />
+
+    </StackPanel>
+
+</windows:SettingsPageView>

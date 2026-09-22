@@ -29,7 +29,10 @@ public partial class AppInstance : PhDisposable
 {
     private readonly string _id;
     private readonly string _pipeName;
-    private readonly Mutex _mutex;
+
+    // Windows uses a named mutex; Unix cannot, so it locks a file instead (see TryLockFile)
+    private readonly Mutex? _mutex;
+    private readonly FileStream? _lockFile;
 
 
     /// <summary>
@@ -47,14 +50,55 @@ public partial class AppInstance : PhDisposable
     public AppInstance(string id)
     {
         _id = id;
-        _pipeName = id;
-        _mutex = new Mutex(true, id, out var isFirstInstance);
-        IsFirstInstance = isFirstInstance;
+
+        // the Unix pipe path (/tmp/CoreFxPipe_*) is not user-scoped, so keep users apart by name
+        _pipeName = OperatingSystem.IsWindows()
+            ? id
+            : $"{id}-{Environment.UserName}";
+
+        if (OperatingSystem.IsWindows())
+        {
+            _mutex = new Mutex(true, id, out var isFirstInstance);
+            IsFirstInstance = isFirstInstance;
+        }
+        else
+        {
+            IsFirstInstance = TryLockFile(_pipeName, out _lockFile);
+        }
 
         // start the pipe server
         if (IsFirstInstance)
         {
             StartPipeServer();
+        }
+    }
+
+
+    /// <summary>
+    /// Takes an exclusive lock on a file next to the pipe socket, the Unix stand-in for the named
+    /// mutex: NativeAOT has no cross-process named mutex there, so every launch would look first.
+    /// </summary>
+    /// <returns><c>true</c> if this process took the lock, i.e. it is the first instance.</returns>
+    private static bool TryLockFile(string name, out FileStream? lockFile)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"{name}.lock");
+
+        try
+        {
+            // the OS drops this lock when the process dies, so a crash never blocks the next launch
+            lockFile = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            return true;
+        }
+        catch (IOException)
+        {
+            lockFile = null;
+            return false;
+        }
+        // an unusable lock path must not stop the app from starting, so claim the first instance
+        catch
+        {
+            lockFile = null;
+            return true;
         }
     }
 
@@ -68,16 +112,20 @@ public partial class AppInstance : PhDisposable
             _mutex.ReleaseMutex();
             _mutex.Dispose();
         }
+
+        // releases the lock; the empty file is left behind for the next instance to re-lock
+        _lockFile?.Dispose();
     }
 
 
     /// <summary>
     /// Sends arguments to existing instances.
     /// </summary>
-    public void SendArgsToExistingInstances(string cmd, params string[] args)
+    /// <returns><c>false</c> if no existing instance took them, so the caller must start normally.</returns>
+    public bool SendArgsToExistingInstances(string cmd, params string[] args)
     {
         // only send if this is NOT the first instance
-        if (IsFirstInstance) return;
+        if (IsFirstInstance) return false;
 
         try
         {
@@ -100,8 +148,9 @@ public partial class AppInstance : PhDisposable
             }
 
             writer.Flush();
+            return true;
         }
-        catch { }
+        catch { return false; }
     }
 
 

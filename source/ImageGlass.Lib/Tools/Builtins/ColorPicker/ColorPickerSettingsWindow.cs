@@ -61,16 +61,16 @@ internal class ColorPickerSettingsWindow : DialogWindow
     {
         base.OnIgLanguageChanged();
 
-        Title = Core.Lang[LangId.FrmColorPickerSettings_Title];
+        Title = Core.Lang[LangId.Tool_ColorPicker_Title];
         Button1Text = Core.Lang[LangId._OK];
         Button2Text = Core.Lang[LangId._Cancel];
 
-        _chkShowRgbA.Content = Core.Lang[LangId.FrmColorPickerSettings_ChkShowRgbA];
-        _chkShowHexA.Content = Core.Lang[LangId.FrmColorPickerSettings_ChkShowHexA];
-        _chkShowHslA.Content = Core.Lang[LangId.FrmColorPickerSettings_ChkShowHslA];
-        _chkShowHsvA.Content = Core.Lang[LangId.FrmColorPickerSettings_ChkShowHsvA];
-        _chkShowCmykA.Content = Core.Lang[LangId.FrmColorPickerSettings_ChkShowCmykA];
-        _chkShowCIELabA.Content = Core.Lang[LangId.FrmColorPickerSettings_ChkShowCIELabA];
+        _chkShowRgbA.Content = Core.Lang[LangId.Tool_ColorPicker_ChkShowRgbA];
+        _chkShowHexA.Content = Core.Lang[LangId.Tool_ColorPicker_ChkShowHexA];
+        _chkShowHslA.Content = Core.Lang[LangId.Tool_ColorPicker_ChkShowHslA];
+        _chkShowHsvA.Content = Core.Lang[LangId.Tool_ColorPicker_ChkShowHsvA];
+        _chkShowCmykA.Content = Core.Lang[LangId.Tool_ColorPicker_ChkShowCmykA];
+        _chkShowCIELabA.Content = Core.Lang[LangId.Tool_ColorPicker_ChkShowCIELabA];
     }
 
 

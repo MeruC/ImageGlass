@@ -1,0 +1,46 @@
+<ui:PhControl
+    x:Class="ImageGlass.UI.PhSearchBoxControl"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:conv="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
+    xmlns:ui="using:ImageGlass.UI"
+    mc:Ignorable="d"
+    d:DesignWidth="250">
+
+    <ui:PhTextBox
+        x:Name="PART_TextBox"
+        PlaceholderText="{CompiledBinding PlaceholderText, RelativeSource={RelativeSource AncestorType=ui:PhSearchBoxControl}}"
+        Text="{CompiledBinding Text, RelativeSource={RelativeSource AncestorType=ui:PhSearchBoxControl}, Mode=TwoWay}">
+
+        <!--  Search icon inside the textbox (left)  -->
+        <ui:PhTextBox.InnerLeftContent>
+            <PathIcon
+                Width="14"
+                Height="14"
+                Margin="8,0,2,0"
+                Data="{StaticResource IconSearch}"
+                Opacity="0.6" />
+        </ui:PhTextBox.InnerLeftContent>
+
+        <!--  Clear button inside the textbox (right)  -->
+        <ui:PhTextBox.InnerRightContent>
+            <ui:PhToolButton
+                x:Name="PART_ClearButton"
+                Margin="2,4,4,4"
+                Padding="6"
+                Cursor="Hand"
+                IsVisible="{CompiledBinding #PART_TextBox.Text, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}">
+                <Path
+                    Width="10"
+                    Height="10"
+                    Data="{StaticResource IconClose}"
+                    Fill="{DynamicResource TextControlForeground}"
+                    Opacity="0.6"
+                    Stretch="Uniform" />
+            </ui:PhToolButton>
+        </ui:PhTextBox.InnerRightContent>
+    </ui:PhTextBox>
+
+</ui:PhControl>

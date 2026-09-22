@@ -1,42 +1,37 @@
-ImageGlass Software End-User License Agreement (EULA)
+ImageGlass
+Copyright (c) 2010 - 2026 Duong Dieu Phap
+Website: https://imageglass.org
+Source:  https://github.com/d2phap/ImageGlass
 
-This is a legal agreement between you and ImageGlass Software
-(Duong Dieu Phap) covering the use of ImageGlass (the "Software").
+This file covers the ImageGlass SOURCE CODE in this repository, which is
+released under the GNU General Public License, Version 3 (GPLv3), available
+at https://www.gnu.org/licenses/gpl.html and reproduced verbatim below.
 
-ImageGlass is copyright (c) 2010 - 2025 by Duong Dieu Phap.
-- Official website: https://imageglass.org
-- Source code: https://github.com/d2phap/ImageGlass
+ImageGlass Classic is free and open source under GPLv3. Personal and
+commercial use are both allowed under the GPLv3 terms.
 
-1) ImageGlass is an open-source software available in two main releases:
-ImageGlass Store and ImageGlass Classic.
-  1a) ImageGlass Store, which is published on the Microsoft Store, is a
-      paid version.
-  1b) ImageGlass Classic is free for both personal and commercial use.
-      It is not available on Microsoft Store.
-  1c) If you intend to use ImageGlass Classic at your place of business
-      or for commercial purposes, submitting an optional registration
-      at https://imageglass.org/license would be appreciated.
-  1d) By installing, copying, or otherwise using the Software, you agree to
-      be bound by the terms of this EULA.
+The following notes are informational only. They do not add conditions to,
+or take anything away from, the GPLv3 grant above.
 
-2) The ImageGlass name and logo are trademarks of Duong Dieu Phap.
-Written permission must be obtained prior to using the ImageGlass name
-or logo in any distributed works.
+- Other terms. The paid ImageGlass Pro edition is covered by separate terms,
+  published in full on the website rather than reproduced here:
+    Classic (GPLv3, this file) https://imageglass.org/license?type=classic
+    Pro license                https://imageglass.org/license?type=pro
+    Commercial Pro license     https://imageglass.org/license?type=commercial-pro
+  Which set applies depends on the plan you bought; see
+  https://imageglass.org/pricing. The license file delivered with a purchase
+  states its own scope. Official binary releases, including the Microsoft
+  Store package, are distributed under those terms.
+- Commercial source license. A separate, non-exclusive MIT source grant for
+  an agreed version is available on request: phap@imageglass.org.
+- Trademarks. The ImageGlass name and logo are trademarks of Duong Dieu Phap
+  and are not licensed by the GPLv3. Written permission must be obtained
+  before using the ImageGlass name or logo in any distributed works.
+- Third-party components keep their own licenses; see the credits shown in
+  the app.
 
-3) Warranty Disclaimer: ImageGlass and documentation are provided "as is"
-without any warranty, express or implied, including, but not limited to,
-the implied warranties of merchantability and fitness for a particular
-purpose. The entire risk as to the quality and performance of the
-Software is with you, the user. In no event shall ImageGlass or anyone
-else who has been involved in the creation, development, production, or
-delivery of this software be liable for any direct, indirect, incidental,
-special, or consequential damages arising out of the use or inability to
-use the software, even if ImageGlass has been advised of the possibility
-of such damages.
 
-4) ImageGlass source code is released under the terms of the GNU General
-Public License, Version 3, which is available at
-https://www.gnu.org/licenses/gpl.html and is reproduced verbatim below.
+
 
 
                      GNU GENERAL PUBLIC LICENSE

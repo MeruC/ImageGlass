@@ -1,0 +1,85 @@
+<windows:SettingsPageView
+    x:Class="ImageGlass.Common.Windows.EditSettingsView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="using:ImageGlass.UI"
+    xmlns:windows="using:ImageGlass.Common.Windows"
+    mc:Ignorable="d"
+    d:DesignWidth="600"
+    HorizontalAlignment="Stretch">
+
+    <StackPanel Orientation="Vertical">
+
+        <!--  Saving  -->
+        <ui:PhTextBlock Classes="group" LangKey="Settings_Edit_Saving" />
+        <StackPanel Margin="{DynamicResource SettingsGroupIndent}">
+            <CheckBox x:Name="PART_DeleteConfirmation">
+                <ui:PhTextBlock LangKey="Settings_EnableDeleteConfirmation" TextWrapping="Wrap" />
+            </CheckBox>
+            <CheckBox x:Name="PART_SaveConfirmation">
+                <ui:PhTextBlock LangKey="Settings_EnableSaveConfirmation" TextWrapping="Wrap" />
+            </CheckBox>
+            <CheckBox x:Name="PART_PreserveModifiedDate">
+                <ui:PhTextBlock LangKey="Settings_EnablePreserveModifiedDate" TextWrapping="Wrap" />
+            </CheckBox>
+            <CheckBox x:Name="PART_OpenSaveAsInCurrentFolder">
+                <ui:PhTextBlock LangKey="Settings_EnableOpenSaveAsInCurrentFolder" TextWrapping="Wrap" />
+            </CheckBox>
+
+            <!--  Image quality (0 - 100)  -->
+            <StackPanel Margin="0,10,0,0" Spacing="{DynamicResource SettingsLabelInputGap}">
+                <ui:PhTextBlock x:Name="PART_ImageEditQualityLabel" LangKey="Settings_ImageEditQuality" />
+                <Slider
+                    x:Name="PART_ImageEditQuality"
+                    Width="200"
+                    HorizontalAlignment="Left"
+                    IsSnapToTickEnabled="True"
+                    Maximum="100"
+                    Minimum="0"
+                    TickFrequency="1" />
+            </StackPanel>
+        </StackPanel>
+
+
+        <!--  Clipboard  -->
+        <ui:PhTextBlock Classes="group" LangKey="Settings_Clipboard" />
+        <StackPanel Margin="{DynamicResource SettingsGroupIndent}">
+            <CheckBox x:Name="PART_CopyMultipleFiles">
+                <ui:PhTextBlock LangKey="Settings_EnableCopyMultipleFiles" TextWrapping="Wrap" />
+            </CheckBox>
+            <CheckBox x:Name="PART_CutMultipleFiles">
+                <ui:PhTextBlock LangKey="Settings_EnableCutMultipleFiles" TextWrapping="Wrap" />
+            </CheckBox>
+        </StackPanel>
+
+
+        <!--  Image editing apps  -->
+        <ui:PhTextBlock Classes="group" LangKey="Settings_EditApps" />
+        <StackPanel Margin="{DynamicResource SettingsGroupIndent}">
+
+            <!--  Action after opening an editing app  -->
+            <StackPanel Spacing="{DynamicResource SettingsLabelInputGap}">
+                <ui:PhTextBlock LangKey="Settings_AfterEditingAction" />
+                <ComboBox x:Name="PART_AfterEditingAction" MinWidth="200" />
+            </StackPanel>
+
+            <!--  Add app + apps table  -->
+            <ui:PhButton
+                x:Name="PART_AddApp"
+                MinWidth="100"
+                Margin="0,14,0,0"
+                HorizontalAlignment="Left"
+                HorizontalContentAlignment="Center"
+                Variant="Outline" />
+
+            <!--  apps table (rows built in code-behind)  -->
+            <ui:PhTableControl
+                x:Name="PART_AppsTable"
+                Margin="0,10,0,0"
+                HorizontalAlignment="Stretch" />
+        </StackPanel>
+
+    </StackPanel>
+</windows:SettingsPageView>

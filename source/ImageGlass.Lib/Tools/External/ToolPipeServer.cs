@@ -18,6 +18,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 using Avalonia.Threading;
 using ImageGlass.Common;
+using ImageGlass.Common.ServiceProviders;
+using ImageGlass.Common.Types;
 using ImageGlass.SDK.Tools;
 using System;
 using System.Collections.Generic;
@@ -177,7 +179,7 @@ internal sealed class ToolPipeServer : IDisposable
 
         var color = await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (Core.API.GetViewer() is not { } viewer) return default;
+            if (AppAPIProvider.GetViewer() is not { } viewer) return default;
             return viewer.GetColorAt(req.X, req.Y);
         });
 
@@ -202,7 +204,7 @@ internal sealed class ToolPipeServer : IDisposable
         // Capture the current bitmap on the UI thread.
         var bitmap = await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (Core.API.GetViewer() is not { } viewer) return null;
+            if (AppAPIProvider.GetViewer() is not { } viewer) return null;
             return viewer.GetRenderedBitmap(selectionOnly);
         });
 
@@ -214,11 +216,13 @@ internal sealed class ToolPipeServer : IDisposable
 
         try
         {
-            // Materialize the bitmap into a temp file so the tool can map it read-only.
-            var tempPath = Path.Combine(Path.GetTempPath(), $"ig_pixels_{Guid.NewGuid():N}.bin");
+            // Write the bitmap to a scoped, exclusively-created temp file the tool maps read-only;
+            // deleted on release/Dispose.
+            var pixelsDir = BHelper.ConfigDir(Dir.Temporary);
+            var tempPath = Path.Combine(pixelsDir, $"ig_pixels_{Guid.NewGuid():N}.bin");
             var byteCount = bitmap.ByteCount;
 
-            using (var fs = File.Create(tempPath))
+            using (var fs = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
                 unsafe
                 {
@@ -230,12 +234,13 @@ internal sealed class ToolPipeServer : IDisposable
             var mmf = MemoryMappedFile.CreateFromFile(
                 tempPath, FileMode.Open, null,
                 byteCount, MemoryMappedFileAccess.Read);
-            _activeBuffers[tempPath] = (mmf, tempPath);
+            var toolPath = BHelper.GetRealPlatformPath(tempPath);
+            _activeBuffers[toolPath] = (mmf, tempPath);
 
             // Return the mapping metadata the tool needs to open and interpret the buffer.
             SendResponse(msg.RequestId, new GetPixelBufferResponse
             {
-                MmfPath = tempPath,
+                MmfPath = toolPath,
                 Width = bitmap.Width,
                 Height = bitmap.Height,
                 Stride = bitmap.RowBytes,
@@ -273,6 +278,13 @@ internal sealed class ToolPipeServer : IDisposable
         if (req is null)
         {
             SendResponse(msg.RequestId, new RunApiResponse { Success = false, Error = "Invalid request" });
+            return;
+        }
+
+        // Security: a tool may only invoke non-destructive host APIs over IPC.
+        if (!Core.API.IsApiAllowedForTool(req.ApiName))
+        {
+            SendResponse(msg.RequestId, new RunApiResponse { Success = false, Error = $"API '{req.ApiName}' is not permitted for tools." });
             return;
         }
 
@@ -381,7 +393,7 @@ internal sealed class ToolPipeServer : IDisposable
     {
         var size = await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (Core.API.GetViewer() is not { } viewer) return (0, 0);
+            if (AppAPIProvider.GetViewer() is not { } viewer) return (0, 0);
             return ((int)viewer.BitmapSize.Width, (int)viewer.BitmapSize.Height);
         });
 
@@ -396,7 +408,7 @@ internal sealed class ToolPipeServer : IDisposable
     {
         var sel = await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (Core.API.GetViewer() is not { } viewer
+            if (AppAPIProvider.GetViewer() is not { } viewer
                 || viewer.SourceSelection == default) return (SetSelectionRequest?)null;
 
             var s = viewer.SourceSelection;
@@ -421,7 +433,7 @@ internal sealed class ToolPipeServer : IDisposable
         var req = DeserializePayload<SetSelectionRequest>(msg);
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (Core.API.GetViewer() is not { } viewer) return;
+            if (AppAPIProvider.GetViewer() is not { } viewer) return;
 
             if (req?.X is null)
             {
@@ -448,7 +460,7 @@ internal sealed class ToolPipeServer : IDisposable
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (Core.API.GetViewer() is { } viewer)
+            if (AppAPIProvider.GetViewer() is { } viewer)
             {
                 viewer.EnableSelection = req.Enable;
             }

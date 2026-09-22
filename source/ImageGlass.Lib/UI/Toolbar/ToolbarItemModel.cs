@@ -22,10 +22,10 @@ using ImageGlass.Common.Actions;
 using ImageGlass.Common.AppThemes;
 using ImageGlass.Common.Photoing;
 using ImageGlass.Common.Types;
+using ImageGlass.Common.Types.JsonTypeConverters;
 using System;
 using System.IO;
 using System.Text.Json.Serialization;
-using ImageGlass.Common.Types.JsonTypeConverters;
 
 namespace ImageGlass.UI;
 
@@ -134,6 +134,7 @@ public partial class ToolbarItemModel : PhReactive, IJsonOnDeserialized
 
             _ = OnPropertyChanged();
             _ = OnPropertyChanged(nameof(ImagePath));
+            _ = OnPropertyChanged(nameof(IsPlaceholderIconVisible));
         }
     } = "";
 
@@ -237,6 +238,8 @@ public partial class ToolbarItemModel : PhReactive, IJsonOnDeserialized
             field = value;
 
             _ = OnPropertyChanged();
+            _ = OnPropertyChanged(nameof(HasClickAction));
+            _ = OnPropertyChanged(nameof(IsPlaceholderIconVisible));
         }
     } = null;
 
@@ -258,8 +261,8 @@ public partial class ToolbarItemModel : PhReactive, IJsonOnDeserialized
             var svgPath = string.Empty;
             if (string.IsNullOrWhiteSpace(Image)) return svgPath;
 
-            // absolute path
-            if (File.Exists(Image)) return svgPath;
+            // absolute path: the file itself is the icon
+            if (File.Exists(Image)) return Image;
 
             // get toolbar icon enum from theme
             if (!Enum.TryParse<IgThemeIcon>(Image, out var themeIconNameEnum)) return svgPath;
@@ -281,6 +284,13 @@ public partial class ToolbarItemModel : PhReactive, IJsonOnDeserialized
     /// </summary>
     [JsonIgnore]
     public bool IsToggle => !string.IsNullOrWhiteSpace(ConfigBinding);
+
+
+    /// <summary>
+    /// Checks if the toolbar button has something to run on click; without it the button is inert.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasClickAction => !string.IsNullOrWhiteSpace(OnClick?.Executable);
 
 
     /// <summary>
@@ -339,6 +349,23 @@ public partial class ToolbarItemModel : PhReactive, IJsonOnDeserialized
 
 
     /// <summary>
+    /// Checks if the hatch placeholder icon is shown: a button that runs something but has no valid icon.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsPlaceholderIconVisible
+    {
+        get
+        {
+            if (!HasClickAction) return false;
+            if (!string.IsNullOrEmpty(ImagePath)) return false;
+
+            // an unloaded theme pack means the icon is pending, not failed
+            return string.IsNullOrWhiteSpace(Image) || Core.Theme.IsValid;
+        }
+    }
+
+
+    /// <summary>
     /// Checks if the button text is visible.
     /// </summary>
     [JsonIgnore]
@@ -363,16 +390,19 @@ public partial class ToolbarItemModel : PhReactive, IJsonOnDeserialized
 
 
     /// <summary>
-    /// Gets the tooltip of toolbar item.
+    /// Gets the tooltip, or <c>null</c> with no text: an empty string still pops an empty box.
     /// </summary>
-    public string Tooltip
+    public string? Tooltip
     {
         get
         {
-            if (string.IsNullOrWhiteSpace(HotkeyText))
-                return DisplayText;
+            var text = DisplayText;
+            if (string.IsNullOrWhiteSpace(text)) return null;
 
-            return $"{DisplayText} ({HotkeyText})";
+            if (string.IsNullOrWhiteSpace(HotkeyText))
+                return text;
+
+            return $"{text} ({HotkeyText})";
         }
     }
 
@@ -388,6 +418,17 @@ public partial class ToolbarItemModel : PhReactive, IJsonOnDeserialized
         Id = id;
     }
 
+
+
+    /// <summary>
+    /// Re-raises the computed localized properties, which read <see cref="Core.Lang"/> directly and
+    /// therefore need an explicit notification when the app language changes.
+    /// </summary>
+    public void RefreshLanguage()
+    {
+        _ = OnPropertyChanged(nameof(DisplayText));
+        _ = OnPropertyChanged(nameof(Tooltip));
+    }
 
 
     /// <summary>

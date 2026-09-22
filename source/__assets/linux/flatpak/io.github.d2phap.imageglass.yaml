@@ -1,0 +1,51 @@
+app-id: io.github.d2phap.imageglass
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+command: imageglass
+
+finish-args:
+  - --socket=x11
+  - --share=ipc
+  - --share=network
+  - --device=dri
+  - --filesystem=host
+  - --socket=cups
+  # Notification sound; also covers PipeWire hosts via pipewire-pulse.
+  - --socket=pulseaudio
+  - --talk-name=org.freedesktop.FileManager1
+  # Slideshow keeps the screen awake by resetting the session idle timer.
+  - --talk-name=org.freedesktop.ScreenSaver
+  # Allow launching external tools on the host via flatpak-spawn --host.
+  - --talk-name=org.freedesktop.Flatpak
+
+modules:
+  - name: imageglass
+    buildsystem: simple
+    build-commands:
+      - install -d ${FLATPAK_DEST}/imageglass
+      # Copy the whole payload: an explicit file list silently drops assets added later
+      # (that is how _lang and default.webp went missing). The tarball is already pruned.
+      - cp -a payload/. ${FLATPAK_DEST}/imageglass/
+      - chmod +x ${FLATPAK_DEST}/imageglass/ImageGlass
+      - install -d ${FLATPAK_DEST}/bin
+      - ln -s ../imageglass/ImageGlass ${FLATPAK_DEST}/bin/imageglass
+      - install -Dm644 io.github.d2phap.imageglass.desktop ${FLATPAK_DEST}/share/applications/io.github.d2phap.imageglass.desktop
+      - install -Dm644 io.github.d2phap.imageglass.metainfo.xml ${FLATPAK_DEST}/share/metainfo/io.github.d2phap.imageglass.metainfo.xml
+      - install -Dm644 io.github.d2phap.imageglass.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/io.github.d2phap.imageglass.svg
+      - install -Dm644 io.github.d2phap.imageglass.png ${FLATPAK_DEST}/share/icons/hicolor/512x512/apps/io.github.d2phap.imageglass.png
+    sources:
+      - type: archive
+        url: https://github.com/d2phap/ImageGlass/releases/download/10.0.6.906/ImageGlass_10.0.6.906_linux-x64.tar.gz
+        sha256: fe75dc8bed701a3dd454494ebd2e03d0c412601d635c52f087a0c197456088dc
+        strip-components: 1
+        # own subdir so the blanket copy above cannot pick up the metadata files below
+        dest: payload
+      - type: file
+        path: io.github.d2phap.imageglass.desktop
+      - type: file
+        path: io.github.d2phap.imageglass.metainfo.xml
+      - type: file
+        path: io.github.d2phap.imageglass.svg
+      - type: file
+        path: io.github.d2phap.imageglass.png

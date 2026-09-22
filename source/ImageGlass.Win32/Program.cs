@@ -19,6 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 using Avalonia;
 using Avalonia.Input;
 using ImageGlass.Common;
+using ImageGlass.Common.Loggers;
 using ImageGlass.ViewModels;
 using ImageGlass.Win32.Common.ServiceProviders;
 using ImageGlass.Win32.Windows;
@@ -34,7 +35,12 @@ sealed class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        StartupTrace.Mark("Main:start");
         Core.BuildInfo = new AppBuildInfo();
+
+        // must precede InitializeAppInstance: the license is resolved in there, before the
+        // providers below are installed
+        Core.StoreEntitlementProvider = new Win32StoreEntitlementProvider();
 
         var isHandled = App.InitializeAppInstance(args, () =>
         {
@@ -42,12 +48,13 @@ sealed class Program
             Core.FileSearchProvider = new Win32FileSearchProvider();
             Core.PreviewProvider = new Win32PhotoPreviewProvider();
             Core.ShellProvider = new Win32ShellProvider();
-            Core.ShareProvider = new Win32ShareProvider();
             Core.PrintProvider = new Win32PrintProvider();
+            Core.PipeSecurityProvider = new Win32PipeSecurityProvider();
         });
 
         if (isHandled) return 0;
 
+        StartupTrace.Mark("Avalonia:start");
         return BuildAvaloniaApp()
             .StartWithClassicDesktopLifetime(args);
     }
@@ -60,7 +67,7 @@ sealed class Program
         .LogToTrace()
         .WithDeveloperTools(o =>
         {
-            o.ApplicationName = BHelper.AppName;
+            o.ApplicationName = BHelper.AppDisplayName;
             o.Gesture = new KeyGesture(Key.I, KeyModifiers.Control | KeyModifiers.Shift);
         })
 #endif

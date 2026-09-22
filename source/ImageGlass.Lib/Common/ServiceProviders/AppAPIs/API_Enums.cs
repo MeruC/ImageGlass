@@ -26,6 +26,7 @@ public enum API
     IG_ViewByStep,
     IG_ViewByIndex,
     IG_OpenSettings,
+    IG_ApplySettings,
 
 
     // Menu > File
@@ -119,14 +120,15 @@ public enum API
     IG_ToggleTool,
     IG_OpenTool,
     IG_CloseTool,
-    IG_GetMoreTools,
 
     // Menu > Settings
 
     // Menu > Help
     IG_OpenAboutWindow,
+    IG_ManageLicense,
     IG_CheckForUpdate,
     IG_ReportIssue,
+    IG_QuickSetup,
     IG_SetDefaultPhotoViewer,
     IG_RemoveDefaultPhotoViewer,
 

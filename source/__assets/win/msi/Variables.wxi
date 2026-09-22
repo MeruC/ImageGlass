@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Include xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <!-- Stable for the whole v10 line. Never reuse v9's code below, or upgrades break both ways. -->
+  <?define IgUpgradeCode = "E89561C1-5B73-481B-86F4-109283B7B230" ?>
+
+  <!-- ImageGlass 9 shipped as an Advanced Installer MSI; installing v10 removes it. -->
+  <?define Ig9UpgradeCode = "877DB994-AB03-4025-B99D-41CE565E810B" ?>
+
+  <!-- Where ImageGlass 9 recorded its own scope, so this package can install into the same one
+       and actually be able to remove it; its Manufacturer was spelled with spaces. -->
+  <?define Ig9SetupRegKey = "Software\Duong Dieu Phap\{$(var.Ig9UpgradeCode)}" ?>
+
+  <!-- The hand-authored exe component; stable forever so an upgrade keeps the same component. -->
+  <?define IgExeComponentGuid = "844B158B-59C3-4D43-98A3-026638A07922" ?>
+
+  <!-- 10.0.5.825: its "All users" install actually ran per-user, so it cannot be upgraded. -->
+  <?define IgBrokenScopeProductCode = "1B2217AA-C4FA-50EE-A284-588149763B66" ?>
+
+  <!-- Magick.NET renumbered this DLL downwards once; a missing file here must fail the build. -->
+  <?define IgMagickNativeFile = "Magick.Native-Q16-HDRI-OpenMP-x64.dll" ?>
+
+  <!-- Version-qualified, so Apps & features and the wizard title name the exact build. The install
+       folder deliberately stays unversioned: an upgrade must land on top of the previous one. -->
+  <?define IgProductName  = "ImageGlass $(var.ProductVersion)" ?>
+  <?define IgFolderName   = "ImageGlass" ?>
+  <?define IgManufacturer = "DuongDieuPhap" ?>
+
+  <!-- Vendor\Product on purpose: the app deletes all of Software\ImageGlass when unregistering. -->
+  <?define IgSetupRegKey = "Software\DuongDieuPhap\ImageGlass" ?>
+
+  <!-- Must match the -arch passed to wix build; selects WixUIValidatePath_<arch>. -->
+  <?define WixUiArch = "X64" ?>
+
+  <?ifndef Cabinet ?>
+    <?define Cabinet = "high" ?>
+  <?endif?>
+
+</Include>

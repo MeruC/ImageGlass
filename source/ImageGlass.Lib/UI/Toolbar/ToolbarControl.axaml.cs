@@ -21,6 +21,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Svg.Skia;
 using ImageGlass.Common;
+using ImageGlass.Common.Localization;
 using ImageGlass.Common.Photoing;
 using ImageGlass.Common.ServiceProviders;
 using ImageGlass.Common.Types;
@@ -49,8 +50,8 @@ public partial class ToolbarControl : PhControl
     public readonly List<ToolbarItemModel> _groupOverflowItemModels = [];
     private readonly List<Control> _itemElements = [];
     private double _lastOverflowWidth;
-
-    private bool _shouldUpdateMenuText = false;
+    private double _overflowSlotWidth; // sticky width of the overflow button + spacing
+    private bool _overflowUpdateQueued;
 
 
 
@@ -93,14 +94,13 @@ public partial class ToolbarControl : PhControl
 
     #region Control Events
 
-    protected override async void OnLoaded(RoutedEventArgs e)
+    protected override void OnLoaded(RoutedEventArgs e)
     {
         base.OnLoaded(e);
 
         Core.Config.PropertyChanged += Config_PropertyChanged;
 
-        await Task.Delay(100);
-        HandleOverflow();
+        ScheduleOverflowUpdate();
     }
 
 
@@ -119,14 +119,25 @@ public partial class ToolbarControl : PhControl
         if (Math.Abs(e.NewSize.Width - _lastOverflowWidth) < 0.5) return;
         _lastOverflowWidth = e.NewSize.Width;
 
-        HandleOverflow();
+        ScheduleOverflowUpdate();
     }
 
 
-    protected override void OnIgLanguageChanged()
+    /// <summary>
+    /// Coalesces overflow recalculation into a single post-layout pass, so bursts of size changes
+    /// (startup, DPI settle, full-screen enter/exit) run <see cref="HandleOverflow"/> once with the
+    /// final, settled bounds instead of flickering through intermediate states.
+    /// </summary>
+    private void ScheduleOverflowUpdate()
     {
-        base.OnIgLanguageChanged();
-        _shouldUpdateMenuText = true;
+        if (_overflowUpdateQueued) return;
+        _overflowUpdateQueued = true;
+
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            _overflowUpdateQueued = false;
+            HandleOverflow();
+        }, Avalonia.Threading.DispatcherPriority.Loaded);
     }
 
 
@@ -142,6 +153,14 @@ public partial class ToolbarControl : PhControl
         {
             UpdateItemTooltipPlacement();
         }
+    }
+
+
+    protected override void OnIgLanguageChanged()
+    {
+        base.OnIgLanguageChanged();
+
+        RefreshLanguage();
     }
 
 
@@ -210,6 +229,9 @@ public partial class ToolbarControl : PhControl
 
 
             // 2. Button item
+            // an inert button (no click action) has nothing to run: leave it out of the menu entirely
+            if (!item.HasClickAction) continue;
+
             // get toolbar item metadata
             var mnuItem = new PhMenuItem
             {
@@ -232,6 +254,16 @@ public partial class ToolbarControl : PhControl
                     };
                 }
                 catch { }
+            }
+
+            // no icon: the same hatch placeholder the toolbar button shows
+            else if (item.IsPlaceholderIconVisible)
+            {
+                mnuItem.Icon = new PathIcon
+                {
+                    Opacity = 0.6,
+                    Data = Resx.GetIcon(ResxIconId.IconPlaceholder),
+                };
             }
 
             // get display text
@@ -258,55 +290,6 @@ public partial class ToolbarControl : PhControl
     private void PART_BtnMainMenu_DropdownOpened(ContextMenu sender, RoutedEventArgs e)
     {
         RefreshMainMenuState();
-    }
-
-
-    /// <summary>
-    /// Refreshes the dynamic state of the main menu (localized text, editing app name,
-    /// per-format enablement, and external tool entries) just before it is shown.
-    /// Shared by the in-app dropdown menu and the macOS native menu.
-    /// </summary>
-    public void RefreshMainMenuState()
-    {
-        UpdateMenuTextIfNeeded();
-
-        // 1. update editing app name
-        EditingApp.UpdateAppNameForMenuEdit(PART_MnuEdit);
-
-        // 2. update per-format enablement of menu items
-        UpdateMenuItemEnableStates();
-
-        // 3. rebuild external tool entries in the Tools submenu
-        BuildExternalToolMenuItems();
-    }
-
-
-    /// <summary>
-    /// Updates the enabled state of format-dependent menu items (animated and multi-frame).
-    /// Separated out so the macOS native menu can reuse it without the structural
-    /// external-tool rebuild (which must not run while AppKit is iterating the menu).
-    /// </summary>
-    private void UpdateMenuItemEnableStates()
-    {
-        // animated format
-        var isAnimator = Core.Photos.Current?.Bitmap is AnimatorImpl;
-        PART_MnuToggleImageAnimation.IsEnabled = isAnimator;
-        PART_MnuViewChannels.IsEnabled
-            = PART_MnuInvertColors.IsEnabled
-            = PART_MnuRotateLeft.IsEnabled
-            = PART_MnuRotateRight.IsEnabled
-            = PART_MnuFlipHorizontal.IsEnabled
-            = PART_MnuFlipVertical.IsEnabled
-            = !isAnimator;
-
-        // multi-frame format
-        var hasMultiFrames = Core.Photos.CurrentMetadata?.FrameCount > 1;
-        PART_MnuExportFrames.IsEnabled
-            = PART_MnuViewNextFrame.IsEnabled
-            = PART_MnuViewPreviousFrame.IsEnabled
-            = PART_MnuViewFirstFrame.IsEnabled
-            = PART_MnuViewLastFrame.IsEnabled
-            = hasMultiFrames;
     }
 
 
@@ -405,6 +388,10 @@ public partial class ToolbarControl : PhControl
             {
                 var itemBtn = new ToolbarButton();
                 itemBtn.IsChecked = ComputeCheckState(vm);
+
+                // a button with no click action is inert: hit-testing off also kills hover/press/tooltip
+                itemBtn.IsEnabled = itemBtn.IsHitTestVisible = vm.HasClickAction;
+
                 itemBtn.Click += ToolbarButton_Click;
                 itemEl = itemBtn;
             }
@@ -468,64 +455,79 @@ public partial class ToolbarControl : PhControl
 
 
     /// <summary>
-    /// Updates item position and alignment.
+    /// Recomputes which primary items overflow and whether the primary group is centered. All width
+    /// math uses stable inputs (the container width + sticky per-item rendered widths), and the
+    /// self-toggled overflow-button slot is excluded, so the result never flip-flops between passes.
     /// </summary>
     private void HandleOverflow()
     {
-        _groupOverflowItemModels.Clear();
+        // use the control's own width (reliably current in the layout/size events) rather than the
+        // child PART_Root.Bounds, which can lag a frame behind on full-screen exit and report the
+        // stale (full-screen) width -> primary buttons stay centered over a small window (overlap)
+        var rootWidth = Bounds.Width;
+        if (rootWidth <= 0.5) return; // not laid out yet
 
-        // 1. calculate how much space can I safely use for center toolbar items
-        // before they hit the right-side panel
-        var availableSpaceOfCenterToolbar =
-            (PART_Root.Bounds.Width / 2) // center line
-            - PART_PrimaryGroup.Bounds.Width / 2 // shifts calculation for primary panel
-            - PART_RightGroup.Bounds.Width // reserves space
-            - Core.Config.ToolbarIconHeight; // safety gap
+        var spacing = ToolbarControlModel.ItemSpacing;
+        var iconSize = Core.Config.ToolbarIconHeight;
+        var padding = PART_Root.Padding.Left + PART_Root.Padding.Right;
 
-
-        // 2. if has no space,
-        // align items to the left to have more space
-        if (availableSpaceOfCenterToolbar <= 0)
+        // sticky overflow-button slot (width + spacing). Captured while visible so toggling its
+        // visibility below never feeds back into the width math.
+        if (PART_BtnOverflowMenu.IsVisible && PART_BtnOverflowMenu.Bounds.Width > 0)
         {
-            PART_PrimaryGroup.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
+            _overflowSlotWidth = PART_BtnOverflowMenu.Bounds.Width + spacing;
         }
-        else
-        {
-            PART_PrimaryGroup.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center;
-        }
+        var overflowSlot = _overflowSlotWidth > 0 ? _overflowSlotWidth : iconSize + spacing;
 
+        // right-group width EXCLUDING the overflow button -> stable regardless of overflow state
+        var rightWidth = PART_RightGroup.Bounds.Width
+            - (PART_BtnOverflowMenu.IsVisible ? overflowSlot : 0);
+        if (rightWidth < 0) rightWidth = 0;
 
-        // 3. event if after the items aligned to the left
-        // it does not have enough space to fit the toolbar,
-        // we need to hide the items until preserve enough space
-
-        // 3.1 calculate available width for visible items
-        var usedWidth = 0d;
-        var availableWidth = PART_Root.Bounds.Width
-            - PART_Root.Padding.Left
-            - PART_Root.Padding.Right
-            - PART_RightGroup.Bounds.Width
-            - (_groupPrimaryItemModels.Count * ToolbarControlModel.ItemSpacing);
-
-        // 3.2 check if we should hide the item
+        // natural width of all primary items (sticky widths; spacing only between items)
+        var primaryCount = _groupPrimaryItemModels.Count;
+        var primaryNaturalWidth = 0d;
         foreach (var item in _groupPrimaryItemModels)
         {
-            if (!_metadataMap.TryGetValue(item.SourceIndex, out var meta)) continue;
-            usedWidth += meta.RenderedWidth;
-
-            // check if the item has enough space to show
-            item.IsNotOverflow = availableWidth >= usedWidth;
-
-
-            // add overflow item
-            if (!item.IsNotOverflow)
-            {
-                _groupOverflowItemModels.Add(item);
-            }
+            if (_metadataMap.TryGetValue(item.SourceIndex, out var m)) primaryNaturalWidth += m.RenderedWidth;
         }
+        primaryNaturalWidth += spacing * Math.Max(0, primaryCount - 1);
 
-        // 4. show the overflow button if there are hidden icons
-        PART_BtnOverflowMenu.IsVisible = usedWidth > availableWidth;
+        // wait until the items have a measured width (avoids an early 0-width pass)
+        if (primaryCount > 0 && primaryNaturalWidth <= 0) return;
+
+
+        // 1. does everything fit without needing the overflow button?
+        var availableNoBtn = rootWidth - padding - rightWidth;
+        var fitsAll = primaryNaturalWidth <= availableNoBtn;
+
+        // reserve the overflow-button slot ONLY when overflowing, so a non-overflowing toolbar
+        // isn't pushed into overflow by reserving space it doesn't need
+        var availableWidth = availableNoBtn - (fitsAll ? 0 : overflowSlot);
+
+
+        // 2. mark overflow items (from the end)
+        _groupOverflowItemModels.Clear();
+        var usedWidth = 0d;
+        for (var i = 0; i < primaryCount; i++)
+        {
+            var item = _groupPrimaryItemModels[i];
+            if (!_metadataMap.TryGetValue(item.SourceIndex, out var meta)) continue;
+
+            usedWidth += meta.RenderedWidth + (i > 0 ? spacing : 0);
+            item.IsNotOverflow = usedWidth <= availableWidth;
+            if (!item.IsNotOverflow) _groupOverflowItemModels.Add(item);
+        }
+        var hasOverflow = _groupOverflowItemModels.Count > 0;
+        PART_BtnOverflowMenu.IsVisible = hasOverflow;
+
+
+        // 3. center only when nothing overflows AND the centered group clears the right group;
+        // otherwise left-align for maximum space
+        var centeredGap = rootWidth / 2 - primaryNaturalWidth / 2 - rightWidth - iconSize;
+        PART_PrimaryGroup.HorizontalAlignment = (!hasOverflow && centeredGap > 0)
+            ? Avalonia.Layout.HorizontalAlignment.Center
+            : Avalonia.Layout.HorizontalAlignment.Left;
     }
 
 
@@ -573,15 +575,55 @@ public partial class ToolbarControl : PhControl
 
 
     /// <summary>
-    /// Updates the text and hotkey text of main menu if needed.
+    /// Re-resolves every localized string owned by the toolbar after the app language changed:
+    /// item texts/tooltips, the menu buttons, and the main-menu items. The menu items are localized
+    /// explicitly because they self-localize only while loaded, and their popup may never have been
+    /// opened (always the case on macOS, where the menu is shown through the native menu bar).
+    /// </summary>
+    private void RefreshLanguage()
+    {
+        foreach (var vm in ItemsSource)
+        {
+            vm.RefreshLanguage();
+        }
+
+        if (DataContext is ToolbarControlModel model) model.RefreshLanguage();
+
+        LocalizeMenuText(PART_MainMenu.Items);
+
+        // push the new text onto the macOS menu bar (no-op on other platforms)
+        SyncNativeStates();
+    }
+
+
+    /// <summary>
+    /// Re-localizes menu items and their submenus.
+    /// </summary>
+    private static void LocalizeMenuText(ItemCollection items)
+    {
+        foreach (var item in items)
+        {
+            if (item is not PhMenuItem mnuItem) continue;
+
+            mnuItem.LocalizeText();
+
+            if (mnuItem.Items.Count > 0)
+            {
+                LocalizeMenuText(mnuItem.Items);
+            }
+        }
+    }
+
+
+    /// <summary>
+    /// Refreshes the hotkey text of every main-menu item from the current config. Runs on each menu
+    /// open so edits made in the Keyboard settings page (or any hotkey change) show immediately.
     /// </summary>
     private void UpdateMenuTextIfNeeded()
     {
-        if (!_shouldUpdateMenuText) return;
         if (PART_MainMenu.Items is not ItemCollection items) return;
 
         LoadMenuText(items);
-        _shouldUpdateMenuText = false;
     }
 
 
@@ -711,6 +753,98 @@ public partial class ToolbarControl : PhControl
             items.Insert(sepEndIndex + i, mnu);
         }
     }
+
+
+    /// <summary>
+    /// Refreshes the dynamic state of the main menu (localized text, editing app name,
+    /// per-format enablement, and external tool entries) just before it is shown.
+    /// Shared by the in-app dropdown menu and the macOS native menu.
+    /// </summary>
+    public void RefreshMainMenuState()
+    {
+        UpdateMenuTextIfNeeded();
+
+        // 1. update editing app name
+        EditingApp.UpdateAppNameForMenuEdit(PART_MnuEdit);
+
+        // 2. update per-format enablement of menu items
+        UpdateMenuItemEnableStates();
+
+        // 3. rebuild external tool entries in the Tools submenu
+        BuildExternalToolMenuItems();
+    }
+
+
+    /// <summary>
+    /// Updates the enabled state of format-dependent menu items (animated and multi-frame).
+    /// Separated out so the macOS native menu can reuse it without the structural
+    /// external-tool rebuild (which must not run while AppKit is iterating the menu).
+    /// </summary>
+    private void UpdateMenuItemEnableStates()
+    {
+        // animated format
+        var isAnimator = Core.Photos.Current?.Bitmap is AnimatorImpl;
+        PART_MnuToggleImageAnimation.IsEnabled = isAnimator;
+        PART_MnuViewChannels.IsEnabled
+            = PART_MnuInvertColors.IsEnabled
+            = PART_MnuRotateLeft.IsEnabled
+            = PART_MnuRotateRight.IsEnabled
+            = PART_MnuFlipHorizontal.IsEnabled
+            = PART_MnuFlipVertical.IsEnabled
+            = !isAnimator;
+
+        // multi-frame format
+        var hasMultiFrames = Core.Photos.CurrentMetadata?.FrameCount > 1;
+        PART_MnuExportFrames.IsEnabled
+            = PART_MnuViewNextFrame.IsEnabled
+            = PART_MnuViewPreviousFrame.IsEnabled
+            = PART_MnuViewFirstFrame.IsEnabled
+            = PART_MnuViewLastFrame.IsEnabled
+            = hasMultiFrames;
+
+        // Pro licensing: one item per state; an expired license is managed, not pitched
+        var isManagingLicense = Core.IsProEnabled || Core.ExpiredLicense is not null;
+        PART_MnuUpgradeLicense.IsVisible = !isManagingLicense;
+        PART_MnuManageLicense.IsVisible = isManagingLicense;
+    }
+
+
+    /// <summary>
+    /// Maps each visible leaf menu action to its localized path (e.g. <c>File / Open…</c>), plus the
+    /// set of all menu keys (so a hidden item can be told from a non-menu one). For the Keyboard page.
+    /// </summary>
+    public (Dictionary<LangId, string> Paths, HashSet<LangId> AllKeys) GetMenuActionMap()
+    {
+        var paths = new Dictionary<LangId, string>();
+        var allKeys = new HashSet<LangId>();
+        CollectMenuActions(PART_MainMenu.Items, [], true, paths, allKeys);
+        return (paths, allKeys);
+    }
+
+
+    private static void CollectMenuActions(ItemCollection items, List<string> parents, bool ancestorsVisible,
+        Dictionary<LangId, string> paths, HashSet<LangId> allKeys)
+    {
+        foreach (var it in items)
+        {
+            if (it is not PhMenuItem item) continue;
+
+            if (item.LangKey is LangId key) allKeys.Add(key);
+            var visible = ancestorsVisible && item.IsVisible;
+
+            // group: descend with its localized label appended to the path
+            if (item.Items.Count > 0)
+            {
+                CollectMenuActions(item.Items, [.. parents, GetNativeHeader(item)], visible, paths, allKeys);
+            }
+            // visible leaf action
+            else if (visible && item.LangKey is LangId leafKey)
+            {
+                paths[leafKey] = string.Join(" / ", parents.Append(GetNativeHeader(item)));
+            }
+        }
+    }
+
 
     #endregion // Methods
 

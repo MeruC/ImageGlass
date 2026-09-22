@@ -49,7 +49,7 @@ public sealed class LosslessCompressionTool : ITool
         {
             _ = await ModalWindow.ShowInfoAsync(context.Window, new ModalWindowOptions
             {
-                Title = Core.Lang[LangId.FrmMain_MnuLosslessCompression],
+                Title = Core.Lang[LangId.Menu_MnuLosslessCompression],
                 Heading = Core.Lang[LangId._NotSupported],
                 Description = filePath,
                 Thumbnail = Core.Photos.Current?.GalleryThumbnail,
@@ -61,9 +61,15 @@ public sealed class LosslessCompressionTool : ITool
         // perform lossless compression
         Core.IsBusy = true;
 
-        var compressionWindow = new LosslessCompressionWindow(filePath);
-        _ = await compressionWindow.ShowAsync(context.Window);
-
-        Core.IsBusy = false;
+        try
+        {
+            var compressionWindow = new LosslessCompressionWindow(filePath);
+            _ = await compressionWindow.ShowAsync(context.Window);
+        }
+        finally
+        {
+            // never leave the app stuck in the busy state
+            Core.IsBusy = false;
+        }
     }
 }

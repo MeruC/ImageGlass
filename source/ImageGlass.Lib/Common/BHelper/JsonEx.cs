@@ -19,7 +19,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 using ImageGlass.Common.Types.JsonTypeConverters;
 using System.IO;
-using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -45,6 +44,7 @@ public partial class BHelper
             Converters =
             {
                 new JsonDateTimeConverter(),
+                new JsonHotkeyArrayConverter(),
             },
 
             // ignoring policy
@@ -62,7 +62,7 @@ public partial class BHelper
     {
         if (!File.Exists(jsonFilePath)) return null;
 
-        using var stream = File.OpenRead(jsonFilePath);
+        using var stream = OpenReadShared(jsonFilePath);
 
         return JsonDocument.Parse(stream, new JsonDocumentOptions
         {
@@ -77,7 +77,7 @@ public partial class BHelper
     /// </summary>
     public static T? ReadJsonFromFile<T>(string jsonFilePath, JsonTypeInfo<T> jsonTypeInfo)
     {
-        using var stream = File.OpenRead(jsonFilePath);
+        using var stream = OpenReadShared(jsonFilePath);
 
         return JsonSerializer.Deserialize<T>(stream, jsonTypeInfo);
     }
@@ -88,20 +88,20 @@ public partial class BHelper
     /// </summary>
     public static async Task<T?> ReadJsonFromFileAsync<T>(string jsonFilePath, JsonTypeInfo<T> jsonTypeInfo)
     {
-        using var stream = File.OpenRead(jsonFilePath);
+        using var stream = OpenReadShared(jsonFilePath);
 
         return await JsonSerializer.DeserializeAsync<T>(stream, jsonTypeInfo);
     }
 
 
     /// <summary>
-    /// Writes an object value to JSON file.
+    /// Writes an object value to JSON file, staged so concurrent writers do not collide.
     /// </summary>
     public static async Task WriteJsonToFileAsync<T>(string jsonFilePath, T value, JsonTypeInfo<T> jsonTypeInfo, CancellationToken token = default)
     {
         var jsonString = JsonSerializer.Serialize(value, jsonTypeInfo);
 
-        await File.WriteAllTextAsync(jsonFilePath, jsonString, Encoding.UTF8, token);
+        await WriteAllTextSharedAsync(jsonFilePath, jsonString, token);
     }
 }
 

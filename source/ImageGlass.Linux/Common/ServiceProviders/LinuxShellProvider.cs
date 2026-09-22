@@ -16,6 +16,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
+using ImageGlass.Common;
 using ImageGlass.Common.ServiceProviders;
 using ImageGlass.Common.Types;
 using System;
@@ -29,6 +30,65 @@ internal class LinuxShellProvider : PhDisposable, IShellProvider
     private static readonly string _desktopFileId = $"imageglass.desktop";
 
 
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public string InstallChannelId => BHelper.IsFlatpakSandbox ? "flatpak"
+        : BHelper.IsAppImage ? "appimage"
+        : "zip";
+
+
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public bool CanRegisterAppMenuEntry => IntegrationHelperPath is not null;
+
+
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public Task<bool> RegisterAppMenuEntryAsync() => RunIntegrationHelperAsync("--install");
+
+
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public Task<bool> UnregisterAppMenuEntryAsync() => RunIntegrationHelperAsync("--remove");
+
+
+    /// <summary>
+    /// Path of the bundled integration script, or <c>null</c> when not running from an AppImage.
+    /// </summary>
+    private static string? IntegrationHelperPath
+    {
+        get
+        {
+            if (!BHelper.IsAppImage) return null;
+
+            var appDir = Environment.GetEnvironmentVariable("APPDIR");
+            if (string.IsNullOrEmpty(appDir)) return null;
+
+            var path = Path.Combine(appDir, "usr", "bin", "ig-appimage-integrate");
+            return File.Exists(path) ? path : null;
+        }
+    }
+
+
+    /// <summary>
+    /// Runs the bundled integration script; never throws, so a failure cannot reach the caller.
+    /// </summary>
+    private static async Task<bool> RunIntegrationHelperAsync(string arg)
+    {
+        if (IntegrationHelperPath is not string helper) return false;
+
+        try
+        {
+            return await BHelper.RunExeAsync(helper, [arg], waitForExit: true) == 0;
+        }
+        catch { return false; }
+    }
+
+
     public object? ForegroundShell { get; set; }
 
 
@@ -38,6 +98,7 @@ internal class LinuxShellProvider : PhDisposable, IShellProvider
     protected override void OnDisposing()
     {
         base.OnDisposing();
+        AllowSleep();
         ForegroundShell = null;
     }
 
@@ -136,7 +197,7 @@ internal class LinuxShellProvider : PhDisposable, IShellProvider
     /// </summary>
     public Task OpenDefaultEditingAppAsync(string filePath, Action? callbackFn = null)
     {
-        // Open the file in its associated application via the OpenURI portal.
+        // Open the file in its associated application.
         XdgPortal.OpenPath(filePath);
         callbackFn?.Invoke();
 
@@ -169,15 +230,15 @@ internal class LinuxShellProvider : PhDisposable, IShellProvider
         }
         catch { }
 
-        // Open the folder in the default file manager via the OpenURI portal.
-        XdgPortal.OpenPath(dirPath);
+        // Open the folder in the default file manager.
+        XdgPortal.ShowFolders(dirPath);
     }
 
 
     /// <summary>
     /// <inheritdoc/>
     /// </summary>
-    public Task SetDefaultPhotoViewerAsync(string[] extensions, bool enable)
+    public Task<DefaultAppScope?> SetDefaultPhotoViewerAsync(string[] extensions, bool enable)
     {
         throw new NotSupportedException("IGE: This feature is not supported on Linux.");
     }
@@ -223,6 +284,31 @@ internal class LinuxShellProvider : PhDisposable, IShellProvider
         // Show the file manager's properties dialog for the file.
         XdgPortal.ShowInFileManager(filePath, showProperties: true);
     }
+
+
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public void ShowShare(nint windowHandle, string[] filePaths)
+    {
+        // Sharing is disabled on Linux for now (the Share button is hidden in the UI).
+        // Linux has no general "share" sheet; the closest target is the XDG Email
+        // portal, but it accepts attachments only as file descriptors (attachment_fds),
+        // which the gdbus CLI cannot pass. Re-enable here once a managed D-Bus client
+        // that can pass FDs is wired up.
+    }
+
+
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public void PreventSleep(string reason) => LinuxPowerApi.PreventSleep(reason);
+
+
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public void AllowSleep() => LinuxPowerApi.AllowSleep();
 
 
 

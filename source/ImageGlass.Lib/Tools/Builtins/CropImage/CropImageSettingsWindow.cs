@@ -68,12 +68,12 @@ internal class CropImageSettingsWindow : DialogWindow
     {
         base.OnIgLanguageChanged();
 
-        Title = Core.Lang[LangId.FrmCropSettings_Title];
+        Title = Core.Lang[LangId.Tool_Crop_Title];
         Button1Text = Core.Lang[LangId._OK];
         Button2Text = Core.Lang[LangId._Cancel];
 
-        _chkCloseToolAfterSaving.Content = Core.Lang[LangId.FrmCropSettings_ChkCloseToolAfterSaving];
-        _chkAutoCenterSelection.Content = Core.Lang[LangId.FrmCropSettings_ChkAutoCenterSelection];
+        _chkCloseToolAfterSaving.Content = Core.Lang[LangId.Tool_Crop_ChkCloseToolAfterSaving];
+        _chkAutoCenterSelection.Content = Core.Lang[LangId.Tool_Crop_ChkAutoCenterSelection];
 
         LoadSelectionTypeItems();
     }
@@ -141,10 +141,10 @@ internal class CropImageSettingsWindow : DialogWindow
             // try specific lang key first
             var specificKey = enumValue switch
             {
-                DefaultSelectionType.UseTheLastSelection => LangId.FrmCropSettings_DefaultSelectionType_UseTheLastSelection,
-                DefaultSelectionType.SelectNone => LangId.FrmCropSettings_DefaultSelectionType_SelectNone,
-                DefaultSelectionType.SelectAll => LangId.FrmCropSettings_DefaultSelectionType_SelectAll,
-                DefaultSelectionType.CustomArea => LangId.FrmCropSettings_DefaultSelectionType_CustomArea,
+                DefaultSelectionType.UseTheLastSelection => LangId.Tool_Crop_DefaultSelectionType_UseTheLastSelection,
+                DefaultSelectionType.SelectNone => LangId.Tool_Crop_DefaultSelectionType_SelectNone,
+                DefaultSelectionType.SelectAll => LangId.Tool_Crop_DefaultSelectionType_SelectAll,
+                DefaultSelectionType.CustomArea => LangId.Tool_Crop_DefaultSelectionType_CustomArea,
                 _ => (LangId?)null,
             };
 
@@ -173,7 +173,7 @@ internal class CropImageSettingsWindow : DialogWindow
                     _ => enumName,
                 };
 
-                displayName = Core.Lang[LangId.FrmCropSettings_DefaultSelectionType_SelectX, percentText];
+                displayName = Core.Lang[LangId.Tool_Crop_DefaultSelectionType_SelectX, percentText];
             }
 
             _cmbSelectionType.Items.Add(new ComboBoxItem { Content = displayName });
@@ -218,7 +218,7 @@ internal class CropImageSettingsWindow : DialogWindow
         // default selection section
         var lblDefaultSelection = new PhTextBlock
         {
-            LangKey = LangId.FrmCropSettings_LblDefaultSelection,
+            LangKey = LangId.Tool_Crop_LblDefaultSelection,
             Opacity = 0.6,
             Margin = new Thickness(0, 8, 0, 0),
         };
@@ -243,7 +243,7 @@ internal class CropImageSettingsWindow : DialogWindow
         // custom area: location
         var lblLocation = new PhTextBlock
         {
-            LangKey = LangId.FrmCrop_LblLocation,
+            LangKey = LangId.Tool_Crop_LblLocation,
             Opacity = 0.6,
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -263,7 +263,7 @@ internal class CropImageSettingsWindow : DialogWindow
         // custom area: size
         var lblSize = new PhTextBlock
         {
-            LangKey = LangId.FrmCrop_LblSize,
+            LangKey = LangId.Tool_Crop_LblSize,
             Opacity = 0.6,
             VerticalAlignment = VerticalAlignment.Center,
         };

@@ -72,6 +72,12 @@ public sealed class UpdateReleaseInfo
     [JsonPropertyName("changelogUrl")]
     public string ChangelogUrl { get; set; } = string.Empty;
 
+    /// <summary>
+    /// URL to download/get the update. Falls back to <see cref="ChangelogUrl"/> when empty.
+    /// </summary>
+    [JsonPropertyName("updateUrl")]
+    public string UpdateUrl { get; set; } = string.Empty;
+
     [JsonPropertyName("publishedDate")]
     public string PublishedDate { get; set; } = string.Empty;
 

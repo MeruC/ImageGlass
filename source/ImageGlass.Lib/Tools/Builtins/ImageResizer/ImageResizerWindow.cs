@@ -107,17 +107,17 @@ public partial class ImageResizerWindow : ModalWindow
     {
         base.OnIgLanguageChanged();
 
-        Title = Core.Lang[LangId.FrmMain_MnuResizeTool];
+        Title = Core.Lang[LangId.Menu_MnuResizeTool];
         Button1Text = Core.Lang[LangId._OK];
         Button2Text = Core.Lang[LangId._Cancel];
 
-        _radPixels.Content = Core.Lang[LangId.FrmResize_RadResizeByPixels];
-        _radPercentage.Content = Core.Lang[LangId.FrmResize_RadResizeByPercentage];
-        _lblSize.Text = Core.Lang[LangId.FrmCrop_LblSize];
-        _chkKeepRatio.Content = Core.Lang[LangId.FrmResize_ChkKeepRatio];
-        _lblResample.Text = Core.Lang[LangId.FrmResize_LblResample];
-        _lblCurrentSize.Text = Core.Lang[LangId.FrmResize_LblCurrentSize];
-        _lblNewSize.Text = Core.Lang[LangId.FrmResize_LblNewSize];
+        _radPixels.Content = Core.Lang[LangId.Tool_Resizer_RadResizeByPixels];
+        _radPercentage.Content = Core.Lang[LangId.Tool_Resizer_RadResizeByPercentage];
+        _lblSize.Text = Core.Lang[LangId.Tool_Crop_LblSize];
+        _chkKeepRatio.Content = Core.Lang[LangId.Tool_Resizer_ChkKeepRatio];
+        _lblResample.Text = Core.Lang[LangId.Tool_Resizer_LblResample];
+        _lblCurrentSize.Text = Core.Lang[LangId.Tool_Resizer_LblCurrentSize];
+        _lblNewSize.Text = Core.Lang[LangId.Tool_Resizer_LblNewSize];
     }
 
 

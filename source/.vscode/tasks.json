@@ -76,28 +76,28 @@
     {
       "label": "publish-win-x64",
       "type": "shell",
-      "command": "dotnet publish '${workspaceFolder}/ImageGlass.Win32/ImageGlass.Win32.csproj' -c Release -r win-x64 -p:Platform=x64 -o '${workspaceFolder}/artifacts/publish/win-x64'; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Copy-Item -Path '${workspaceFolder}/_assets/_app/*' -Destination '${workspaceFolder}/artifacts/publish/win-x64' -Recurse -Force",
+      "command": "Remove-Item '${workspaceFolder}/__artifacts/publish/win-x64' -Recurse -Force -ErrorAction SilentlyContinue; dotnet publish '${workspaceFolder}/ImageGlass.Win32/ImageGlass.Win32.csproj' -c Release -r win-x64 -p:Platform=x64 -o '${workspaceFolder}/__artifacts/publish/win-x64'; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Copy-Item -Path '${workspaceFolder}/__assets/__app/*' -Destination '${workspaceFolder}/__artifacts/publish/win-x64' -Recurse -Force",
       "problemMatcher": "$msCompile",
       "group": "build"
     },
     {
       "label": "publish-win-arm64",
       "type": "shell",
-      "command": "dotnet publish '${workspaceFolder}/ImageGlass.Win32/ImageGlass.Win32.csproj' -c Release -r win-arm64 -p:Platform=ARM64 -o '${workspaceFolder}/artifacts/publish/win-arm64'; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Copy-Item -Path '${workspaceFolder}/_assets/_app/*' -Destination '${workspaceFolder}/artifacts/publish/win-arm64' -Recurse -Force",
+      "command": "Remove-Item '${workspaceFolder}/__artifacts/publish/win-arm64' -Recurse -Force -ErrorAction SilentlyContinue; dotnet publish '${workspaceFolder}/ImageGlass.Win32/ImageGlass.Win32.csproj' -c Release -r win-arm64 -p:Platform=ARM64 -o '${workspaceFolder}/__artifacts/publish/win-arm64'; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Copy-Item -Path '${workspaceFolder}/__assets/__app/*' -Destination '${workspaceFolder}/__artifacts/publish/win-arm64' -Recurse -Force",
       "problemMatcher": "$msCompile",
       "group": "build"
     },
     {
       "label": "publish-linux-x64",
       "type": "shell",
-      "command": "dotnet publish '${workspaceFolder}/ImageGlass.Linux/ImageGlass.Linux.csproj' -c Release -r linux-x64 -p:Platform=x64 -p:PublishAot=true -p:PublishSingleFile=true -p:PublishTrimmed=true -o '${workspaceFolder}/artifacts/publish/linux-x64' --self-contained true && cp -r '${workspaceFolder}/_assets/_app/.' '${workspaceFolder}/artifacts/publish/linux-x64/'",
+      "command": "rm -rf '${workspaceFolder}/__artifacts/publish/linux-x64' && dotnet publish '${workspaceFolder}/ImageGlass.Linux/ImageGlass.Linux.csproj' -c Release -r linux-x64 -p:Platform=x64 -p:PublishAot=true -p:PublishSingleFile=true -p:PublishTrimmed=true -o '${workspaceFolder}/__artifacts/publish/linux-x64' --self-contained true && cp -r '${workspaceFolder}/__assets/__app/.' '${workspaceFolder}/__artifacts/publish/linux-x64/'",
       "problemMatcher": "$msCompile",
       "group": "build"
     },
     {
       "label": "publish-mac-arm64",
       "type": "shell",
-      "command": "dotnet publish '${workspaceFolder}/ImageGlass.Mac/ImageGlass.Mac.csproj' -c Release -r osx-arm64 -p:Platform=ARM64 -p:PublishAot=true -p:PublishSingleFile=true -p:PublishTrimmed=true -o '${workspaceFolder}/artifacts/publish/osx-arm64' --self-contained true && cp -r '${workspaceFolder}/_assets/_app/.' '${workspaceFolder}/artifacts/publish/osx-arm64/'",
+      "command": "rm -rf '${workspaceFolder}/__artifacts/publish/osx-arm64' && dotnet publish '${workspaceFolder}/ImageGlass.Mac/ImageGlass.Mac.csproj' -c Release -r osx-arm64 -p:Platform=ARM64 -p:PublishAot=true -p:PublishSingleFile=true -p:PublishTrimmed=true -o '${workspaceFolder}/__artifacts/publish/osx-arm64' --self-contained true && cp -r '${workspaceFolder}/__assets/__app/.' '${workspaceFolder}/__artifacts/publish/osx-arm64/'",
       "problemMatcher": "$msCompile",
       "group": "build"
     },
@@ -109,7 +109,7 @@
       "type": "process",
       "command": "/bin/bash",
       "args": [
-        "${workspaceFolder}/_assets/mac/script-pack-mac-arm64-app.sh"
+        "${workspaceFolder}/__assets/mac/script-pack-mac-arm64-app.sh"
       ],
       "problemMatcher": [],
       "dependsOn": [
@@ -123,21 +123,7 @@
       "type": "process",
       "command": "/bin/bash",
       "args": [
-        "${workspaceFolder}/_assets/mac/script-pack-mac-arm64-dmg.sh"
-      ],
-      "problemMatcher": [],
-      "dependsOn": [
-        "pack-mac-arm64-app"
-      ],
-      "dependsOrder": "sequence",
-      "group": "build"
-    },
-    {
-      "label": "pack-mac-arm64-pkg-appstore",
-      "type": "process",
-      "command": "/bin/bash",
-      "args": [
-        "${workspaceFolder}/_assets/mac/script-pack-mac-arm64-pkg-appstore.sh"
+        "${workspaceFolder}/__assets/mac/script-pack-mac-arm64-dmg.sh"
       ],
       "problemMatcher": [],
       "dependsOn": [
@@ -151,11 +137,30 @@
       "type": "process",
       "command": "/bin/bash",
       "args": [
-        "${workspaceFolder}/_assets/linux/script-pack-linux-x64-flatpak.sh"
+        "${workspaceFolder}/__assets/linux/script-pack-linux-x64-flatpak.sh"
       ],
       "options": {
         "env": {
           // Prompts on each run; leave blank to build an unsigned bundle.
+          "GPG_KEY": "${input:gpgKey}"
+        }
+      },
+      "problemMatcher": [],
+      "group": "build"
+    },
+    // Linux AppImage pack task. Like the Flatpak one the script publishes a fresh AOT
+    // build itself. Unlike Flatpak, an AppImage runs against the HOST glibc, so the
+    // script prints the floor of the shipped binaries on every run.
+    {
+      "label": "pack-linux-x64-appimage",
+      "type": "process",
+      "command": "/bin/bash",
+      "args": [
+        "${workspaceFolder}/__assets/linux/script-pack-linux-x64-appimage.sh"
+      ],
+      "options": {
+        "env": {
+          // Prompts on each run; leave blank to build an unsigned AppImage.
           "GPG_KEY": "${input:gpgKey}"
         }
       },
@@ -178,10 +183,11 @@
         "-ExecutionPolicy",
         "Bypass",
         "-File",
-        "${workspaceFolder}/_assets/win/script-pack-win-msix.ps1",
+        "${workspaceFolder}/__assets/win/script-pack-win-msix.ps1",
         "-Platform",
         "x64",
-        "-Sign"
+        "-Sign",
+        "-UnvirtualizedResources"
       ],
       "problemMatcher": [],
       "group": "build"
@@ -195,10 +201,11 @@
         "-ExecutionPolicy",
         "Bypass",
         "-File",
-        "${workspaceFolder}/_assets/win/script-pack-win-msix.ps1",
+        "${workspaceFolder}/__assets/win/script-pack-win-msix.ps1",
         "-Platform",
         "arm64",
-        "-Sign"
+        "-Sign",
+        "-UnvirtualizedResources"
       ],
       "problemMatcher": [],
       "group": "build"
@@ -212,20 +219,87 @@
         "-ExecutionPolicy",
         "Bypass",
         "-File",
-        "${workspaceFolder}/_assets/win/script-pack-win-msix.ps1",
+        "${workspaceFolder}/__assets/win/script-pack-win-msix.ps1",
         "-Bundle"
       ],
       "problemMatcher": [],
       "group": "build"
     },
-    // Convenience: build everything for a release — both signed .msix (self-host)
-    // and the .msixbundle (Microsoft Store).
+
+    // Windows portable ZIP pack tasks. Like the MSIX ones, the script publishes a fresh AOT
+    // build itself. The archive ships the .igportable marker, so it keeps its settings in its
+    // own folder; pass -NoPortable to build one that uses %LocalAppData% instead.
+    {
+      "label": "pack-win-x64-zip",
+      "type": "process",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/__assets/win/script-pack-win-zip.ps1",
+        "-Platform",
+        "x64",
+        "-Sign"
+      ],
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "pack-win-arm64-zip",
+      "type": "process",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/__assets/win/script-pack-win-zip.ps1",
+        "-Platform",
+        "arm64",
+        "-Sign"
+      ],
+      "problemMatcher": [],
+      "group": "build"
+    },
+    // Windows MSI installer pack task. Like the MSIX/ZIP ones the script publishes a fresh AOT
+    // build itself, so it does NOT depend on the publish-win-* tasks.
+    //
+    //   x64 only. The package is dual-scope: the wizard asks per-user or per-machine, and both
+    //   work under msiexec /qn. Installing it removes ImageGlass 9. Uninstalling cleans up the
+    //   file-type registration unless IGREMOVEFILEASSOC=0.
+    //
+    // Needs the pinned WiX 5.0.2 dotnet tool + UI extension; the script fails with the exact
+    // install commands if they are missing (or pass -BootstrapWix). See __assets/win/README.md.
+    {
+      "label": "pack-win-x64-msi",
+      "type": "process",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/__assets/win/script-pack-win-msi.ps1",
+        "-Platform",
+        "x64",
+        "-Sign"
+      ],
+      "problemMatcher": [],
+      "group": "build"
+    },
+    // Convenience: build everything for a release, the signed .msix + .msi installer +
+    // portable .zip (self-host) and the .msixbundle (Microsoft Store).
     {
       "label": "pack-win-all",
       "dependsOn": [
         "pack-win-x64-msix",
         "pack-win-arm64-msix",
-        "pack-win-msstore-msixbundle"
+        "pack-win-msstore-msixbundle",
+        "pack-win-x64-zip",
+        "pack-win-arm64-zip",
+        "pack-win-x64-msi"
       ],
       "dependsOrder": "sequence",
       "problemMatcher": [],
@@ -234,11 +308,11 @@
   ],
   "inputs": [
     {
-      // Used by "pack-linux-x64-flatpak". Not stored on disk — VS Code only keeps
-      // the last value for the current session. Blank => unsigned bundle.
+      // Used by "pack-linux-x64-flatpak" and "pack-linux-x64-appimage". Not stored on
+      // disk — VS Code only keeps the last value for the session. Blank => unsigned.
       "id": "gpgKey",
       "type": "promptString",
-      "description": "GPG key (email or key ID) to sign the .flatpak bundle. Leave blank for an unsigned bundle.",
+      "description": "GPG key (email or key ID) to sign the .flatpak bundle / .AppImage. Leave blank for an unsigned build.",
       "default": ""
     }
   ],

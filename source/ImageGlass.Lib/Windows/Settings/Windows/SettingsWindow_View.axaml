@@ -1,0 +1,190 @@
+<ui:PhControl
+    x:Class="ImageGlass.Common.Windows.SettingsWindowView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:conv="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
+    xmlns:types="using:ImageGlass.Common.Types"
+    xmlns:ui="using:ImageGlass.UI"
+    xmlns:windows="using:ImageGlass.Common.Windows"
+    mc:Ignorable="d"
+    d:DesignHeight="560"
+    d:DesignWidth="900"
+    x:Name="Root"
+    HorizontalAlignment="Stretch"
+    VerticalAlignment="Stretch">
+
+    <!--  Shared values reused across all settings pages  -->
+    <ui:PhControl.Resources>
+        <!--  Left indentation of the content under a group/sub-group heading  -->
+        <Thickness x:Key="SettingsGroupIndent">20,0,0,0</Thickness>
+        <!--  Vertical gap between a setting's label and its input control  -->
+        <x:Double x:Key="SettingsLabelInputGap">5</x:Double>
+    </ui:PhControl.Resources>
+
+
+    <!--  Shared styles for all settings pages (cascade to the hosted page content)  -->
+    <ui:PhControl.Styles>
+        <!--  Setting group heading: semibold, subtitle size  -->
+        <Style Selector="TextBlock.group">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="{x:Static types:Const.FONT_SIZE_SUBTITLE}" />
+            <Setter Property="Margin" Value="0,20,0,8" />
+        </Style>
+
+        <!--  First group heading on a page: no top margin (the page already has top padding)  -->
+        <Style Selector="TextBlock.group:nth-child(1)">
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+
+        <!--  Setting sub-group heading: semibold, body size  -->
+        <Style Selector="TextBlock.subgroup">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,10,0,4" />
+        </Style>
+
+    </ui:PhControl.Styles>
+
+
+    <!--  sidebar | content  -->
+    <Grid ClipToBounds="True">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" MinWidth="200" />
+            <ColumnDefinition Width="*" MinWidth="400" />
+        </Grid.ColumnDefinitions>
+
+        <!--  Sidebar  -->
+        <ListBox
+            x:Name="PART_Sidebar"
+            Grid.Column="0"
+            Padding="14"
+            Background="Transparent">
+            <ListBox.Styles>
+                <Style Selector="ListBoxItem">
+                    <Setter Property="CornerRadius" Value="{DynamicResource ControlCornerRadius}" />
+                    <Setter Property="Padding" Value="10,6" />
+                    <Setter Property="MinHeight" Value="0" />
+                    <Setter Property="Margin" Value="0,1" />
+                    <Setter Property="VerticalContentAlignment" Value="Center" />
+                </Style>
+            </ListBox.Styles>
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="windows:SettingsNavItem">
+                    <StackPanel
+                        Margin="{CompiledBinding Indent}"
+                        VerticalAlignment="Center"
+                        Orientation="Horizontal"
+                        Spacing="10">
+                        <PathIcon
+                            Width="{x:Static types:Const.FONT_SIZE_BODY}"
+                            Height="{x:Static types:Const.FONT_SIZE_BODY}"
+                            VerticalAlignment="Center"
+                            Data="{CompiledBinding Icon}" />
+                        <TextBlock VerticalAlignment="Center" Text="{CompiledBinding LabelText}" />
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+
+        <!--  Content area: warning bar + header (title + search) over the scrollable page  -->
+        <Grid
+            Grid.Column="1"
+            RowDefinitions="Auto, Auto, *"
+            Margin="28,0,0,0">
+
+            <!--  Admin-managed settings warning (shown when >=1 setting is locked by igconfig.admin.json)  -->
+            <Border
+                x:Name="PART_LockWarning"
+                Grid.Row="0"
+                Margin="0,14,14,0"
+                Padding="12,10"
+                Background="{DynamicResource IG_BackgroundWarningBrush}"
+                CornerRadius="{DynamicResource ControlCornerRadius}"
+                IsVisible="False">
+                <ui:PhTextBlock
+                    VerticalAlignment="Center"
+                    Foreground="{DynamicResource IG_TextWarningBrush}"
+                    LangKey="Settings_AdminLockWarning"
+                    TextWrapping="Wrap" />
+            </Border>
+
+            <!--  Header  -->
+            <Grid
+                Grid.Row="1"
+                ColumnDefinitions="*, Auto, Auto"
+                Margin="0,14,14,14"
+                ColumnSpacing="12">
+                <TextBlock
+                    x:Name="PART_Title"
+                    Grid.Column="0"
+                    VerticalAlignment="Center"
+                    FontSize="{x:Static types:Const.FONT_SIZE_TITLE}"
+                    FontWeight="SemiBold"
+                    TextTrimming="CharacterEllipsis" />
+
+                <!--  Upgrade pitch or manage license, depending on the edition  -->
+                <ui:PhButton
+                    x:Name="PART_License"
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    Click="License_Click"
+                    FontWeight="SemiBold"
+                    Variant="Outline" />
+
+                <Panel Grid.Column="2">
+                    <ui:PhSearchBoxControl x:Name="PART_Search" Width="250" />
+
+                    <Popup
+                        x:Name="PART_SearchPopup"
+                        IsLightDismissEnabled="True"
+                        Placement="BottomEdgeAlignedRight"
+                        PlacementTarget="{CompiledBinding #PART_Search}">
+                        <Border
+                            Background="{DynamicResource MenuFlyoutPresenterBackground}"
+                            BorderBrush="{DynamicResource MenuFlyoutPresenterBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="{DynamicResource OverlayCornerRadius}">
+                            <ListBox
+                                x:Name="PART_SearchResults"
+                                Width="400"
+                                MaxHeight="350"
+                                Padding="0,4"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                ClipToBounds="True"
+                                CornerRadius="{DynamicResource OverlayCornerRadius}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="windows:SettingItem">
+                                        <StackPanel Spacing="1">
+                                            <TextBlock Text="{CompiledBinding LabelText}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock
+                                                FontSize="{x:Static types:Const.FONT_SIZE_SMALL}"
+                                                IsVisible="{CompiledBinding SectionText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}"
+                                                Opacity="0.6"
+                                                Text="{CompiledBinding SectionText}"
+                                                TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+                    </Popup>
+                </Panel>
+            </Grid>
+
+
+            <!--  Scrollable page content  -->
+            <ScrollViewer
+                Grid.Row="2"
+                HorizontalScrollBarVisibility="Disabled"
+                VerticalScrollBarVisibility="Auto">
+                <ContentControl x:Name="PART_ContentHost" Padding="0,0,14,32" />
+            </ScrollViewer>
+
+        </Grid>
+
+    </Grid>
+
+</ui:PhControl>

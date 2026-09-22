@@ -38,6 +38,7 @@ public enum ConfigId
     ShowGalleryFileName,
     ShowAppIcon,
     EnableMainWindowMaximized,
+    EnableSettingsWindowMaximized,
     EnableSlideshow,
     EnableSlideshowCountdown,
     EnableSlideshowRandomInterval,
@@ -46,6 +47,7 @@ public enum ConfigId
     EnableFrameless,
     EnableFullScreen,
     EnableLoopBackNavigation,
+    EnableAutoSwitchSiblingDir,
     EnableMultiInstances,
     EnableWindowTopMost,
     EnableFreePan,
@@ -80,7 +82,7 @@ public enum ConfigId
 
     #region Number settings
 
-    // QuickSetupVersion,
+    QuickSetupVersion,
     PanMargin,
     PanSpeed,
     ZoomSpeed,
@@ -110,7 +112,7 @@ public enum ConfigId
     ColorProfile,
     LastSeenImagePath,
     LastOpenedTool,
-    // LastOpenedSetting,
+    LastOpenedSetting,
     BackgroundColor,
     SlideshowBackgroundColor,
     DarkTheme,
@@ -123,6 +125,7 @@ public enum ConfigId
     #region Enum settings
 
     CheckerboardMode,
+    BrowsingMode,
     ImageLoadingOrder,
     ImageLoadingOrderType,
     ZoomMode,
@@ -137,6 +140,7 @@ public enum ConfigId
     #region Array settings
 
     MainWindowBounds,
+    SettingsWindowBounds,
     ZoomLevels,
     EditApps,
     SingleFrameFormats,
@@ -145,8 +149,8 @@ public enum ConfigId
     MenuHotkeys,
     MouseClickActions,
     MouseWheelActions,
-    LockedFeatures,
     Layout,
+    PluginTrust,
     Tools,
     ToolSettings,
     ToolbarButtons,

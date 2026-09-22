@@ -71,6 +71,13 @@ public partial class IgTheme : PhReactive
     public string FolderPath { get; set; } = "";
 
     /// <summary>
+    /// Gets <see cref="FolderPath"/> as the OS sees it, for display: a pack ships in the app dir or
+    /// is installed into the config dir, and either can be reached through a platform indirection.
+    /// </summary>
+    [JsonIgnore]
+    public string DisplayFolderPath => BHelper.GetRealPlatformPath(FolderPath);
+
+    /// <summary>
     /// Gets the name of theme folder.
     /// </summary>
     [JsonIgnore]

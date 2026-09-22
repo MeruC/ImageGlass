@@ -1,0 +1,88 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Style Selector="ToggleSwitch">
+
+        <!--  rounded focus ring  -->
+        <Setter Property="FocusAdorner">
+            <FocusAdornerTemplate>
+                <Border
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                    BorderThickness="2"
+                    CornerRadius="{DynamicResource ControlCornerRadius}">
+                    <Border
+                        BorderBrush="{DynamicResource SystemControlBackgroundAltHighBrush}"
+                        BorderThickness="1"
+                        CornerRadius="{DynamicResource ControlCornerRadius}" />
+                </Border>
+            </FocusAdornerTemplate>
+        </Setter>
+
+        <!--  pin focus target to the 40px switch so the ring isn't clipped  -->
+        <Style Selector="^ /template/ Grid#SwitchAreaGrid">
+            <Setter Property="Width" Value="40" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+        </Style>
+
+        <!--  transitions  -->
+        <Style Selector="^ /template/ Border#OuterBorder, ^ /template/ Border#SwitchKnobBounds">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.10" />
+                    <BrushTransition Property="BorderBrush" Duration="0:0:0.10" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="^ /template/ Ellipse#SwitchKnobOff, ^ /template/ Ellipse#SwitchKnobOn">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Fill" Duration="0:0:0.10" />
+                    <DoubleTransition Property="Width" Duration="0:0:0.10" />
+                    <DoubleTransition Property="Height" Duration="0:0:0.10" />
+                </Transitions>
+            </Setter>
+        </Style>
+
+        <!--  knob size: rest / hover / pressed (hover+pressed last to win the tie)  -->
+        <Style Selector="^:not(:checked) /template/ Ellipse#SwitchKnobOff">
+            <Setter Property="Width" Value="12" />
+            <Setter Property="Height" Value="12" />
+        </Style>
+        <Style Selector="^:checked /template/ Ellipse#SwitchKnobOn">
+            <Setter Property="Width" Value="12" />
+            <Setter Property="Height" Value="12" />
+        </Style>
+        <Style Selector="^:pointerover /template/ Ellipse#SwitchKnobOff, ^:pointerover /template/ Ellipse#SwitchKnobOn">
+            <Setter Property="Width" Value="14" />
+            <Setter Property="Height" Value="14" />
+        </Style>
+        <Style Selector="^:pressed /template/ Ellipse#SwitchKnobOff, ^:pressed /template/ Ellipse#SwitchKnobOn">
+            <Setter Property="Width" Value="10" />
+            <Setter Property="Height" Value="10" />
+        </Style>
+
+        <!--  ON pill: accent fills; disabled = dimmed accent  -->
+        <Style Selector="^:checked /template/ Border#SwitchKnobBounds">
+            <Setter Property="Background" Value="{DynamicResource PhAccentFill}" />
+        </Style>
+        <Style Selector="^:checked:pointerover /template/ Border#SwitchKnobBounds">
+            <Setter Property="Background" Value="{DynamicResource PhAccentFillPointerOver}" />
+        </Style>
+        <Style Selector="^:checked:pressed /template/ Border#SwitchKnobBounds">
+            <Setter Property="Background" Value="{DynamicResource PhAccentFillPressed}" />
+        </Style>
+        <Style Selector="^:checked:disabled /template/ Border#SwitchKnobBounds">
+            <Setter Property="Background" Value="{DynamicResource PhAccentFill}" />
+            <Setter Property="Opacity" Value="0.5" />
+        </Style>
+
+        <!--  ON knob: accent-button foreground  -->
+        <Style Selector="^:checked /template/ Ellipse#SwitchKnobOn">
+            <Setter Property="Fill" Value="{DynamicResource AccentButtonForeground}" />
+        </Style>
+        <Style Selector="^:checked:disabled /template/ Ellipse#SwitchKnobOn">
+            <Setter Property="Fill" Value="{DynamicResource AccentButtonForegroundDisabled}" />
+        </Style>
+
+    </Style>
+
+</Styles>

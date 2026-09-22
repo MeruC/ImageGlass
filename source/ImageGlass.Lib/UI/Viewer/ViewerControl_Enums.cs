@@ -67,6 +67,11 @@ public enum ZoomChangeSource
     Unknown,
     ZoomMode,
     SizeChanged,
+
+    /// <summary>
+    /// Re-fitted for an animation frame of a different size.
+    /// </summary>
+    FrameChanged,
 }
 
 

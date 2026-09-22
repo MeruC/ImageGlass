@@ -37,12 +37,19 @@ public sealed class UpdateProvider
     /// Gets whether enough time has elapsed since the last check
     /// to warrant a new silent check.
     /// </summary>
+    /// <remarks>
+    /// The threshold carries a fresh random offset each time it is read, so installs that launch
+    /// on the same cadence do not all report on the same day. Nothing is stored to achieve this.
+    /// </remarks>
     public static bool ShouldCheck
     {
         get
         {
             var lastCheckTime = ParseLastCheckTime();
-            return (DateTime.UtcNow - lastCheckTime) >= UpdateConstants.BackgroundCheckInterval;
+            var threshold = UpdateConstants.BackgroundCheckInterval
+                + TimeSpan.FromMinutes(Random.Shared.Next(0, UpdateConstants.CheckJitterMinutes));
+
+            return (DateTime.UtcNow - lastCheckTime) >= threshold;
         }
     }
 
@@ -50,17 +57,25 @@ public sealed class UpdateProvider
     /// <summary>
     /// Checks for an available update by fetching the update manifest.
     /// </summary>
-    public async Task<UpdateCheckResult> CheckForUpdateAsync(CancellationToken ct)
+    /// <param name="isScheduled">
+    /// <c>true</c> for the periodic background check. Only a scheduled check carries the usage
+    /// tokens and moves the bookmark; a manual check must leave both alone, or the user-triggered
+    /// request would report despite an opt-out and would shorten the next reported gap.
+    /// </param>
+    public async Task<UpdateCheckResult> CheckForUpdateAsync(CancellationToken ct, bool isScheduled = false)
     {
         if (_isChecking) return UpdateCheckResult.Failed("Check already in progress.");
 
         _isChecking.SetTrue();
         try
         {
-            var result = await CheckForUpdateCoreAsync(ct).ConfigureAwait(false);
+            var result = await CheckForUpdateCoreAsync(isScheduled, ct).ConfigureAwait(false);
 
-            // record the check time
-            Core.Config.AutoUpdate = DateTime.UtcNow.ToString("o");
+            if (isScheduled)
+            {
+                // record the check time
+                Core.Config.AutoUpdate = DateTime.UtcNow.ToString("o");
+            }
 
             return result;
         }
@@ -86,9 +101,9 @@ public sealed class UpdateProvider
     /// <summary>
     /// Core logic: fetch metadata -> parse -> compare version.
     /// </summary>
-    private static async Task<UpdateCheckResult> CheckForUpdateCoreAsync(CancellationToken ct)
+    private static async Task<UpdateCheckResult> CheckForUpdateCoreAsync(bool isScheduled, CancellationToken ct)
     {
-        var json = await FetchMetadataAsync(ct).ConfigureAwait(false);
+        var json = await FetchMetadataAsync(isScheduled, ct).ConfigureAwait(false);
         if (string.IsNullOrEmpty(json))
         {
             return UpdateCheckResult.Failed("Empty response from update server.");
@@ -113,13 +128,13 @@ public sealed class UpdateProvider
             return UpdateCheckResult.NoUpdate();
         }
 
-        // version comparison
-        if (CompareVersions(Core.BuildInfo.AppVersion, release.Version) <= 0)
+        // version comparison - already up-to-date, but keep the release so UI can show its info
+        if (CompareVersions(Core.BuildInfo.Version, release.Version) <= 0)
         {
-            return UpdateCheckResult.NoUpdate();
+            return UpdateCheckResult.NoUpdate(release);
         }
 
-        // skip if user chose to skip this version
+        // user chose to skip this version (an update does exist, so don't surface it as the latest)
         if (string.Equals(release.Version, Core.Config.UpdateSkippedVersion, StringComparison.OrdinalIgnoreCase))
         {
             return UpdateCheckResult.NoUpdate();
@@ -132,12 +147,16 @@ public sealed class UpdateProvider
     /// <summary>
     /// Fetches the metadata JSON from the update endpoint with size limits.
     /// </summary>
-    private static async Task<string?> FetchMetadataAsync(CancellationToken ct)
+    private static async Task<string?> FetchMetadataAsync(bool isScheduled, CancellationToken ct)
     {
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(UpdateConstants.MetadataTimeout);
 
         using var request = new HttpRequestMessage(HttpMethod.Get, UpdateConstants.MetadataUrl);
+
+        // set per request: the value varies per check, so it cannot live on the shared client
+        request.Headers.UserAgent.ParseAdd(UsageStatsAgent.Build(isScheduled));
+
         using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token)
             .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
@@ -177,9 +196,9 @@ public sealed class UpdateProvider
     /// <summary>
     /// Compares two version strings. Returns positive if remote is newer, 0 if equal, negative if older.
     /// </summary>
-    internal static int CompareVersions(string currentFullVersion, string remoteVersion)
+    internal static int CompareVersions(string currentVersion, string remoteVersion)
     {
-        var currentNumeric = currentFullVersion.Split('-')[0];
+        var currentNumeric = currentVersion.Split('-')[0];
         var remoteNumeric = remoteVersion.Split('-')[0];
 
         var current = Version.Parse(currentNumeric);
@@ -191,14 +210,11 @@ public sealed class UpdateProvider
 
     private static HttpClient CreateHttpClient()
     {
-        var client = new HttpClient
+        // no default User-Agent: every request sets its own (see FetchMetadataAsync)
+        return new HttpClient
         {
             Timeout = UpdateConstants.MetadataTimeout,
         };
-
-        client.DefaultRequestHeaders.UserAgent.ParseAdd($"ImageGlass/{Core.BuildInfo?.AppVersion ?? "10.0.0.0"}");
-
-        return client;
     }
 
     #endregion // Private Methods

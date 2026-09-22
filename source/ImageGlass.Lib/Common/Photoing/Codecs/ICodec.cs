@@ -51,10 +51,27 @@ public interface ICodec : IDisposable
     int DecodePriority { get; }
 
     /// <summary>
-    /// Gets the known extensions for the codec.
-    /// This is informational only for now.
+    /// Gets the ordering priority when selecting a codec to write a destination extension.
+    /// Higher values are evaluated first.
     /// </summary>
-    IReadOnlyList<string> SupportedExtensions { get; }
+    int EncodePriority { get; }
+
+    /// <summary>
+    /// Gets the extensions this codec can read.
+    /// </summary>
+    IReadOnlyList<string> DecodingExtensions { get; }
+
+    /// <summary>
+    /// Gets whether this codec can write anything at all (static raster or multi-frame).
+    /// Used to keep non-encoders out of encode selection entirely.
+    /// </summary>
+    bool SupportsEncoding { get; }
+
+    /// <summary>
+    /// Gets the extensions this codec can write. Empty plus <see cref="SupportsEncoding"/>
+    /// means catch-all, which only a built-in codec may claim.
+    /// </summary>
+    IReadOnlyList<string> EncodingExtensions { get; }
 
     /// <summary>
     /// Returns <c>true</c> if this codec can load metadata for the specified file.
@@ -79,5 +96,27 @@ public interface ICodec : IDisposable
     Task<CodecDecodeResult> DecodeAsync(PhotoMetadata metadata,
         PhotoReadOptions options,
         CodecSelectionContext context,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns <c>true</c> if this codec can write the given destination path.
+    /// </summary>
+    bool CanEncode(string destFilePath, CodecEncodeContext context);
+
+    /// <summary>
+    /// Writes one image to <see cref="CodecEncodeRequest.DestFilePath"/>.
+    /// </summary>
+    Task<CodecEncodeResult> EncodeAsync(CodecEncodeRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns <c>true</c> if this codec can write multiple frames to the given destination path.
+    /// </summary>
+    bool CanEncodeMultiFrame(string destFilePath, CodecEncodeContext context);
+
+    /// <summary>
+    /// Writes every frame of the request to <see cref="CodecMultiFrameEncodeRequest.DestFilePath"/>.
+    /// </summary>
+    Task<CodecEncodeResult> EncodeMultiFrameAsync(CodecMultiFrameEncodeRequest request,
         CancellationToken cancellationToken = default);
 }

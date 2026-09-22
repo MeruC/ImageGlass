@@ -30,7 +30,6 @@ namespace ImageGlass.UI.Viewer;
 public partial class ViewerControl
 {
     private readonly ZoomInfo _zooming = new();
-    private double _panSpeed = 20f;
     private bool _enablePanningVelocity = true;
 
 
@@ -135,12 +134,16 @@ public partial class ViewerControl
     /// </summary>
     public double[] ZoomLevels
     {
-        get => _zooming.Levels;
-        set => _zooming.Levels = value.OrderBy(x => x)
-            .Where(i => i > 0)
-            .Distinct()
-            .ToArray();
+        get => GetValue(ZoomLevelsProperty);
+        set => SetValue(ZoomLevelsProperty, value);
     }
+    public static readonly StyledProperty<double[]> ZoomLevelsProperty =
+        AvaloniaProperty.Register<ViewerControl, double[]>(nameof(ZoomLevels), [],
+            coerce: (_, value) => (value ?? [])
+                .OrderBy(x => x)
+                .Where(i => i > 0)
+                .Distinct()
+                .ToArray());
 
 
     /// <summary>
@@ -148,13 +151,12 @@ public partial class ViewerControl
     /// </summary>
     public double ZoomSpeed
     {
-        get => _zooming.Speed;
-        set
-        {
-            _zooming.Speed = Math.Min(value, ZoomInfo.MAX_ZOOM_SPEED);
-            _zooming.Speed = Math.Max(value, -ZoomInfo.MAX_ZOOM_SPEED);
-        }
+        get => GetValue(ZoomSpeedProperty);
+        set => SetValue(ZoomSpeedProperty, value);
     }
+    public static readonly StyledProperty<double> ZoomSpeedProperty =
+        AvaloniaProperty.Register<ViewerControl, double>(nameof(ZoomSpeed), 0d,
+            coerce: (_, value) => Math.Clamp(value, -ZoomInfo.MAX_ZOOM_SPEED, ZoomInfo.MAX_ZOOM_SPEED));
 
 
     /// <summary>
@@ -168,12 +170,12 @@ public partial class ViewerControl
     /// </summary>
     public double PanSpeed
     {
-        get => _panSpeed;
-        set
-        {
-            _panSpeed = Math.Max(value, 0); // min 0
-        }
+        get => GetValue(PanSpeedProperty);
+        set => SetValue(PanSpeedProperty, value);
     }
+    public static readonly StyledProperty<double> PanSpeedProperty =
+        AvaloniaProperty.Register<ViewerControl, double>(nameof(PanSpeed), 20d,
+            coerce: (_, value) => Math.Max(value, 0)); // min 0
 
 
     /// <summary>
@@ -246,8 +248,10 @@ public partial class ViewerControl
     ///         whether the scaled image fits within or overflows the viewport.</item>
     ///   <item>Clamp the source position to enforce panning margins (with FreePan ratcheting).</item>
     ///   <item>Preserve the logical (unclipped) position for the next frame.</item>
+    ///   <item>Align the source position to the pixel grid while rendering 1:1.</item>
     ///   <item>Clip source rect to valid image bounds, adjusting dest rect proportionally
     ///         to show a gap at the edge when over-panned.</item>
+    ///   <item>Snap the dest origin to a whole device pixel.</item>
     /// </list>
     /// </para>
     /// </summary>
@@ -266,9 +270,11 @@ public partial class ViewerControl
         // 1. Prepare DPI-scaled values and shared state
         // ═══════════════════════════════════════════════════════════════════════
 
+        var dpi = Dpi;
+
         // zoom factors in device pixels (divide by DPI to go from logical to physical)
-        var currentZoomFactor = _zooming.Factor / Dpi;
-        var oldZoomFactor = _zooming.OldFactor / Dpi;
+        var currentZoomFactor = _zooming.Factor / dpi;
+        var oldZoomFactor = _zooming.OldFactor / dpi;
 
         // cursor position relative to the DrawingArea origin (excluding padding)
         var zoomX = _zooming.ZoomedPoint.X - Padding.Left;
@@ -440,30 +446,35 @@ public partial class ViewerControl
         // For overflow axes, limit how far the user can pan beyond the image edge.
         // panMarginSrc is PanMargin (screen px) converted to source coordinates.
         //
-        // Clamping is SKIPPED during zoom-to-cursor when:
-        //   - CanUseFreePan is on: zoom-to-cursor must stay unconstrained for smooth
-        //     overflow ↔ fits-within transitions.
-        //   - The axis just transitioned from fits-within -> overflow: skip for continuity
-        //     even without FreePan.
+        // Clamping is SKIPPED during zoom-to-cursor only when CanUseFreePan is on, so the
+        // overflow <-> fits-within transition stays smooth. Without FreePan the image must
+        // always stay inside the viewport, so the clamp keeps running while zooming.
         var panMargin = IsWindowFitMode ? 0 : PanMargin;
         var panMarginSrc = DpiScale(panMargin) / currentZoomFactor;
+        var skipClampWhileZooming = isZoomingToPoint && CanUseFreePan;
+
+        // An axis that just grew past the viewport has no over-pan gap to preserve, so it
+        // lands flush against the edge instead of inheriting the previous centering gap.
+        var wasWidthFitting = BitmapSize.Width * oldZoomFactor <= controlW;
+        var wasHeightFitting = BitmapSize.Height * oldZoomFactor <= controlH;
 
         // --- X-axis margin clamping ---
-        var wasWidthFitting = BitmapSize.Width * oldZoomFactor <= controlW;
-        if (scaledImgWidth > controlW && !(isZoomingToPoint && (CanUseFreePan || wasWidthFitting)))
+        if (scaledImgWidth > controlW && !skipClampWhileZooming)
         {
+            var baseMarginX = isZoomingToPoint && wasWidthFitting ? 0 : panMarginSrc;
+
             // Compute per-side effective margins.
             // When CanUseFreePan is on, use the PREVIOUS frame's edge gap (from DestRect,
             // which hasn't been overwritten yet) as a floor. This "ratchet" preserves the
-            // over-pan established by zoom-to-cursor — the user can pan back but not further out.
-            var effectiveLeftMarginX = panMarginSrc;
-            var effectiveRightMarginX = panMarginSrc;
+            // over-pan established by zoom-to-cursor: the user can pan back but not further out.
+            var effectiveLeftMarginX = baseMarginX;
+            var effectiveRightMarginX = baseMarginX;
             if (CanUseFreePan)
             {
                 var prevLeftGap = Math.Max(0, DestRect.X - DrawingArea.Left) / currentZoomFactor;
                 var prevRightGap = Math.Max(0, DrawingArea.Left + controlW - (DestRect.X + DestRect.Width)) / currentZoomFactor;
-                effectiveLeftMarginX = Math.Max(panMarginSrc, prevLeftGap);
-                effectiveRightMarginX = Math.Max(panMarginSrc, prevRightGap);
+                effectiveLeftMarginX = Math.Max(baseMarginX, prevLeftGap);
+                effectiveRightMarginX = Math.Max(baseMarginX, prevRightGap);
             }
 
             if (srcX < -effectiveLeftMarginX)
@@ -477,17 +488,18 @@ public partial class ViewerControl
         }
 
         // --- Y-axis margin clamping ---
-        var wasHeightFitting = BitmapSize.Height * oldZoomFactor <= controlH;
-        if (scaledImgHeight > controlH && !(isZoomingToPoint && (CanUseFreePan || wasHeightFitting)))
+        if (scaledImgHeight > controlH && !skipClampWhileZooming)
         {
-            var effectiveTopMarginY = panMarginSrc;
-            var effectiveBottomMarginY = panMarginSrc;
+            var baseMarginY = isZoomingToPoint && wasHeightFitting ? 0 : panMarginSrc;
+
+            var effectiveTopMarginY = baseMarginY;
+            var effectiveBottomMarginY = baseMarginY;
             if (CanUseFreePan)
             {
                 var prevTopGap = Math.Max(0, DestRect.Y - DrawingArea.Top) / currentZoomFactor;
                 var prevBottomGap = Math.Max(0, DrawingArea.Top + controlH - (DestRect.Y + DestRect.Height)) / currentZoomFactor;
-                effectiveTopMarginY = Math.Max(panMarginSrc, prevTopGap);
-                effectiveBottomMarginY = Math.Max(panMarginSrc, prevBottomGap);
+                effectiveTopMarginY = Math.Max(baseMarginY, prevTopGap);
+                effectiveBottomMarginY = Math.Max(baseMarginY, prevBottomGap);
             }
 
             if (srcY + srcHeight > BitmapSize.Height + effectiveBottomMarginY)
@@ -554,7 +566,21 @@ public partial class ViewerControl
 
 
         // ═══════════════════════════════════════════════════════════════════════
-        // 4.2. Clip source rect to valid image bounds
+        // 4.2. Keep 1:1 rendering aligned to the pixel grid
+        // ═══════════════════════════════════════════════════════════════════════
+        //
+        // At 100% one source pixel maps to one device pixel, so a fractional source offset
+        // puts the sampler on texel boundaries. Applied after step 4.1 so the pan state keeps
+        // its sub-pixel precision; only the drawn position is quantized.
+        if (_zooming.Factor == 1)
+        {
+            if (scaledImgWidth > controlW) srcX = Math.Round(srcX, MidpointRounding.AwayFromZero);
+            if (scaledImgHeight > controlH) srcY = Math.Round(srcY, MidpointRounding.AwayFromZero);
+        }
+
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // 4.3. Clip source rect to valid image bounds
         // ═══════════════════════════════════════════════════════════════════════
         //
         // When the source position extends beyond [0, BitmapSize], clip it back
@@ -603,10 +629,29 @@ public partial class ViewerControl
         // ═══════════════════════════════════════════════════════════════════════
         // 5. Commit the final rectangles
         // ═══════════════════════════════════════════════════════════════════════
+        //
+        // A half-pixel dest origin makes the sampler land on source texel boundaries, so a 1px
+        // row/column is duplicated or dropped at 100% zoom. Snapped here rather than earlier
+        // because step 4.1 back-computes the pan state from the unsnapped position.
+        var snappedDestX = SnapToDevicePixel(destX, dpi);
+        var snappedDestY = SnapToDevicePixel(destY, dpi);
+
         SrcRect = new(srcX, srcY, srcWidth, srcHeight);
-        DestRect = new(destX, destY, destWidth, destHeight);
+        DestRect = new(snappedDestX, snappedDestY, destWidth, destHeight);
 
         _zooming.OldFactor = _zooming.Factor;
+    }
+
+
+    /// <summary>
+    /// Rounds a logical coordinate so that it lands on a whole device pixel.
+    /// </summary>
+    private static double SnapToDevicePixel(double logicalValue, double dpi)
+    {
+        if (dpi <= 0) return logicalValue;
+
+        var devicePixel = Math.Round(logicalValue * dpi, MidpointRounding.AwayFromZero);
+        return devicePixel / dpi;
     }
 
 
@@ -673,6 +718,42 @@ public partial class ViewerControl
             IsZoomModeChange = mode != _zooming.Mode,
             IsPreviewingImage = _isPreviewing,
             ChangeSource = zoomedByResizing ? ZoomChangeSource.SizeChanged : ZoomChangeSource.ZoomMode,
+        });
+    }
+
+
+    /// <summary>
+    /// Re-fits the viewport to an animation frame whose size differs from the
+    /// previous one. UI thread, outside <c>_lock</c> (same as <see cref="SetZoomMode"/>).
+    /// </summary>
+    internal void RefitForFrameSize(Size newSize)
+    {
+        if (newSize.IsEmpty || newSize == BitmapSize) return;
+
+        BitmapSize = newSize;
+
+        // the previous frame's rects belong to a differently-sized image
+        _logicalSrcPoint = default;
+        _zooming.ZoomedPoint = new();
+
+        // a manual zoom factor survives; otherwise refit via the active mode
+        if (!_zooming.IsManual)
+        {
+            _zooming.Factor = CalculateZoomFactor(_zooming.Mode, newSize.Width, newSize.Height);
+        }
+        _zooming.OldFactor = _zooming.Factor;
+
+        CalculateDrawingRegion();
+
+        if (!SourceSelection.IsEmpty) SetSourceSelection(SourceSelection);
+
+        ZoomChanged?.Invoke(this, new ViewerZoomEventArgs()
+        {
+            ZoomFactor = _zooming.Factor,
+            IsManualZoom = _zooming.IsManual,
+            IsZoomModeChange = false,
+            IsPreviewingImage = _isPreviewing,
+            ChangeSource = ZoomChangeSource.FrameChanged,
         });
     }
 

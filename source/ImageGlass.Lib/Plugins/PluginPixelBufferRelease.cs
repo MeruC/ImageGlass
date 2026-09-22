@@ -54,10 +54,20 @@ internal sealed class PluginPixelBufferRelease
     public string PluginId = string.Empty;
 
     /// <summary>
+    /// Liveness gate of the owning plugin; the release no-ops once its library is unloaded.
+    /// </summary>
+    public PluginLiveToken? LiveToken;
+
+    /// <summary>
     /// Tracks whether the buffer has already been released so manual release paths
     /// (host failure cleanup) and Skia disposal cannot double-free.
     /// </summary>
     private int _released;
+
+    /// <summary>
+    /// Buffer size reported to the GC via <see cref="GC.AddMemoryPressure"/>, 0 when untracked.
+    /// </summary>
+    private long _pressureBytes;
 
 
     /// <summary>
@@ -82,19 +92,46 @@ internal sealed class PluginPixelBufferRelease
 
 
     /// <summary>
+    /// Accounts this buffer to the GC, which cannot otherwise see plugin-owned native memory.
+    /// </summary>
+    public void TrackNativeMemory(long byteCount)
+    {
+        if (byteCount <= 0 || _pressureBytes != 0) return;
+
+        _pressureBytes = byteCount;
+        GC.AddMemoryPressure(byteCount);
+    }
+
+
+    /// <summary>
     /// Releases the plugin buffer immediately. Safe to call multiple times.
     /// </summary>
     public unsafe void ReleaseFromHost()
     {
         if (System.Threading.Interlocked.Exchange(ref _released, 1) != 0) return;
 
+        // Skip if the library was unloaded; calling into unmapped memory crashes with an
+        // uncatchable AccessViolationException. Memory is reclaimed by the OS on unload.
+        if (LiveToken is not null) LiveToken.RunIfAlive(FreeBuffer);
+        else FreeBuffer();
+
+        // paired with TrackNativeMemory; the interlock above makes it exactly once
+        if (_pressureBytes > 0) GC.RemoveMemoryPressure(_pressureBytes);
+    }
+
+
+    /// <summary>
+    /// Calls the plugin's <c>FreePixelBuffer</c>; only valid while the library is loaded.
+    /// </summary>
+    private unsafe void FreeBuffer()
+    {
         var apiPtr = CodecApiPtr;
         if (apiPtr == 0) return;
 
         try
         {
             var codecApi = (IGCodecApi*)apiPtr;
-            if (codecApi->FreePixelBuffer == null) return;
+            if (!PluginAbi.HasEntryPoint(codecApi, &codecApi->FreePixelBuffer)) return;
 
             var localBuf = Buffer;
             codecApi->FreePixelBuffer(&localBuf);

@@ -16,6 +16,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
+using ImageGlass.Common;
 using ImageGlass.Common.Types;
 using ImageGlass.SDK.Tools;
 using System;
@@ -74,48 +75,60 @@ public sealed class ToolProcessManager : PhDisposable
 
     /// <summary>
     /// Starts a tool process: creates named pipe, spawns process, and waits for connection.
+    /// A hard start failure returns null info plus the exception message; a start-but-no-connect
+    /// returns null info with no reason (the caller treats that as a launched tool).
     /// </summary>
-    internal async Task<ToolProcessInfo?> StartToolAsync(ExternalTool tool)
+    internal async Task<(ToolProcessInfo? Info, string? Error)> StartToolAsync(ExternalTool tool)
     {
-        if (string.IsNullOrEmpty(tool.Executable)) return null;
+        if (string.IsNullOrEmpty(tool.Executable)) return (null, null);
 
-        // Create the IPC endpoint first so the child process can connect immediately.
-        // macOS limits Unix domain socket paths to ~104 chars — keep pipe names short
-        var pipeName = $"ig_{Guid.NewGuid().ToString("N")[..8]}";
+        var pipeName = CreatePipeName();
 
+        // CurrentUserOnly restricts the pipe to this user (SID/UID); the SDK client sets the same flag.
         var pipeServer = new NamedPipeServerStream(
             pipeName, PipeDirection.InOut, 1,
-            PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
 
-        var workingDir = Path.GetDirectoryName(tool.Executable) ?? string.Empty;
-        var args = $"--pipe {pipeName}";
-        if (!string.IsNullOrEmpty(tool.Arguments))
-        {
-            args = $"{tool.Arguments} {args}";
-        }
+        // Expand %VAR% tokens so a portable/relative executable path works cross-platform.
+        var exe = BHelper.ResolvePath(tool.Executable);
+        var workingDir = Path.GetDirectoryName(exe) ?? string.Empty;
 
         // Launch the tool process with the generated pipe name in its arguments.
         Process? process;
         try
         {
-            process = Process.Start(new ProcessStartInfo
+            var filePath = Core.Photos?.Current?.FilePath ?? string.Empty;
+            var psi = new ProcessStartInfo
             {
-                FileName = tool.Executable,
-                Arguments = args,
+                FileName = exe,
                 UseShellExecute = false,
                 WorkingDirectory = workingDir,
-            });
+            };
+
+            // Configured args first (each as its own element), then the pipe handshake.
+            foreach (var arg in BHelper.BuildArgumentList(tool.Arguments, filePath))
+            {
+                psi.ArgumentList.Add(arg);
+            }
+            psi.ArgumentList.Add("--pipe");
+            psi.ArgumentList.Add(pipeName);
+
+            // Inside a Flatpak sandbox, route the launch through the host (no-op otherwise).
+            BHelper.ApplyFlatpakHostSpawn(psi);
+
+            process = Process.Start(psi);
         }
-        catch
+        catch (Exception ex)
         {
+            // e.g. the executable/command was not found
             await pipeServer.DisposeAsync();
-            return null;
+            return (null, ex.Message);
         }
 
         if (process is null)
         {
             await pipeServer.DisposeAsync();
-            return null;
+            return (null, null);
         }
 
         // Wait for the integrated tool to attach to the pipe before exposing it.
@@ -127,10 +140,21 @@ public sealed class ToolProcessManager : PhDisposable
         }
         catch (OperationCanceledException)
         {
-            // Tool didn't connect in time
+            // Started but didn't connect in time (e.g. not an integrated tool). The process did
+            // start, so this isn't a launch failure: return null info with no reason (caller ignores).
             try { process.Kill(); } catch { }
             await pipeServer.DisposeAsync();
-            return null;
+            return (null, null);
+        }
+
+        // Windows only: reject if the connected client isn't the child we spawned (pipe squatting).
+        // Provider is null on Linux/macOS, so this is skipped there.
+        if (Core.PipeSecurityProvider is { } pipeSec
+            && !pipeSec.VerifyClientProcess(pipeServer.SafePipeHandle, process.Id))
+        {
+            try { process.Kill(); } catch { }
+            await pipeServer.DisposeAsync();
+            return (null, null);
         }
 
         // Register the fully-connected process so later calls can reuse it.
@@ -153,7 +177,24 @@ public sealed class ToolProcessManager : PhDisposable
             _processes[tool.ToolId] = info;
         }
 
-        return info;
+        return (info, null);
+    }
+
+
+    /// <summary>
+    /// Builds the pipe name. A bare GUID on Windows and macOS; on Linux an absolute socket path
+    /// under the shared host home.
+    /// </summary>
+    private static string CreatePipeName()
+    {
+        var id = $"ig_{Guid.NewGuid():N}";
+        if (BHelper.OS != OSType.Linux) return id;
+
+        // ~/.cache stays visible through --filesystem=host, unlike /tmp.
+        var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".cache", "ImageGlass", "tools");
+        Directory.CreateDirectory(dir);
+        return Path.Combine(dir, id);
     }
 
 

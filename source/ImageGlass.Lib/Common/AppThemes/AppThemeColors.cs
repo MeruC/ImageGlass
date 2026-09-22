@@ -54,12 +54,20 @@ public static class AppThemeColors
     public static Color BackgroundWarningLight { get; } = BHelper.ColorFromHex("#FFF4CEBB");
     public static Color BackgroundDangerLight { get; } = BHelper.ColorFromHex("#FDE7E9BB");
 
+    public static Color TextSuccessLight { get; } = BHelper.ColorFromHex("#0F7B0F");
+    public static Color TextWarningLight { get; } = BHelper.ColorFromHex("#9D5D00");
+    public static Color TextDangerLight { get; } = BHelper.ColorFromHex("#C42B1C");
+
 
     // Dark theme
     public static Color BackgroundInfoDark { get; } = BHelper.ColorFromHex("#1A3244BB");
     public static Color BackgroundSuccessDark { get; } = BHelper.ColorFromHex("#393D1BBB");
     public static Color BackgroundWarningDark { get; } = BHelper.ColorFromHex("#433519BB");
     public static Color BackgroundDangerDark { get; } = BHelper.ColorFromHex("#442726BB");
+
+    public static Color TextSuccessDark { get; } = BHelper.ColorFromHex("#6CCB5F");
+    public static Color TextWarningDark { get; } = BHelper.ColorFromHex("#FCE100");
+    public static Color TextDangerDark { get; } = BHelper.ColorFromHex("#FF99A4");
 
 
 

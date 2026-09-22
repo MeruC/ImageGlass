@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using ImageGlass.Common.ServiceProviders.FileSearchService;
 
 namespace ImageGlass.Common.Photoing;
 
@@ -42,6 +43,23 @@ public partial class PhotoManager
     {
         var newItems = filePaths.Select(path => new Photo(path)).ToList();
 
+        AddPhotos(newItems, index);
+    }
+
+
+    /// <summary>
+    /// Adds file-search entries using their captured filesystem metadata.
+    /// </summary>
+    public void Add(IEnumerable<FileSearchEntry> entries, int index = -1)
+    {
+        var newItems = entries.Select(entry => new Photo(entry)).ToList();
+
+        AddPhotos(newItems, index);
+    }
+
+
+    private void AddPhotos(List<Photo> newItems, int index)
+    {
         lock (_lock)
         {
             var addedIndex = index;
@@ -310,7 +328,7 @@ public partial class PhotoManager
     public void Clear(Photo? excludeFromDisposal = null)
     {
         // cancel and clear all cached photos first
-        ClearCache();
+        ClearCache(excludeFromDisposal);
 
         Photo? initPhoto;
         Photo[] snapshot;

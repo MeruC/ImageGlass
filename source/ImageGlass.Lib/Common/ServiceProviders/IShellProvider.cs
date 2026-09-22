@@ -16,6 +16,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
+using ImageGlass.Common.Types;
 using System;
 using System.Threading.Tasks;
 
@@ -78,6 +79,12 @@ public interface IShellProvider : IDisposable
 
 
     /// <summary>
+    /// Shows the OS Share dialog for the given files.
+    /// </summary>
+    void ShowShare(nint windowHandle, string[] filePaths);
+
+
+    /// <summary>
     /// Sets the desktop wallpaper.
     /// </summary>
     void SetWallpaper(string filePath);
@@ -97,8 +104,74 @@ public interface IShellProvider : IDisposable
 
     /// <summary>
     /// Sets or removes this app as the default photo viewer for the specified file extensions.
+    /// Returns the scope (per-user vs per-machine) used, or <c>null</c> when not supported.
     /// </summary>
-    Task SetDefaultPhotoViewerAsync(string[] extensions, bool enable);
+    Task<DefaultAppScope?> SetDefaultPhotoViewerAsync(string[] extensions, bool enable);
+
+
+    /// <summary>
+    /// Rewrites a default-photo-viewer registration whose launch path an app update deleted.
+    /// </summary>
+    void RepairDefaultViewerRegistration() { }
+
+
+    /// <summary>
+    /// Gets the registry scope (per-user vs per-machine) that would be used to register
+    /// the app as the default photo viewer, based on where the app is installed.
+    /// </summary>
+    DefaultAppScope GetDefaultViewerScope() => DefaultAppScope.CurrentUser;
+
+
+    /// <summary>
+    /// Whether the app can register file associations that the shell honors (false for a virtualized Store MSIX).
+    /// </summary>
+    bool IsDefaultViewerConfigurable => true;
+
+
+    /// <summary>
+    /// Whether the app runs from a packaged install (Windows MSIX), where the installer/OS owns
+    /// file associations. Default (non-Windows / unpackaged): <c>false</c>.
+    /// </summary>
+    bool IsPackagedApp => false;
+
+
+    /// <summary>
+    /// Whether the app can add itself to the system's application menu. False wherever the
+    /// installer already did it, so only a self-contained build that installs nothing says true.
+    /// </summary>
+    bool CanRegisterAppMenuEntry => false;
+
+
+    /// <summary>
+    /// Adds the app to the system's application menu, so it can be launched from there and picked
+    /// as a default handler for image files.
+    /// </summary>
+    /// <returns><c>true</c> when an entry was written.</returns>
+    Task<bool> RegisterAppMenuEntryAsync() => Task.FromResult(false);
+
+
+    /// <summary>
+    /// Removes the entry created by <see cref="RegisterAppMenuEntryAsync"/>.
+    /// </summary>
+    /// <returns><c>true</c> when an entry was removed.</returns>
+    Task<bool> UnregisterAppMenuEntryAsync() => Task.FromResult(false);
+
+
+    /// <summary>
+    /// Coarse distribution channel reported by the anonymous usage statistics, e.g.
+    /// <c>msstore</c>, <c>msix</c>, <c>msi</c>, <c>flatpak</c>, <c>appimage</c>, <c>dmg</c>, <c>zip</c>.
+    /// Must stay a small closed set; never derive it from a filesystem path.
+    /// </summary>
+    string InstallChannelId => "zip";
+
+
+    /// <summary>
+    /// Resolves an app-owned file or dir path to where it physically lives. On a packaged (MSIX)
+    /// Windows build, per-package write virtualization may redirect <c>%LocalAppData%</c> content to
+    /// the package container; returns that real path when it exists. Default (non-Windows /
+    /// unpackaged): returns <paramref name="path"/> unchanged.
+    /// </summary>
+    string GetActualPath(string path) => path;
 
 
     /// <summary>
@@ -107,4 +180,30 @@ public interface IShellProvider : IDisposable
     /// Returns <c>false</c> for mouse wheel (discrete) events.
     /// </summary>
     bool HasPreciseScrollingDeltas() => false;
+
+
+    /// <summary>
+    /// Detaches the OS IME from the window so it stops claiming keystrokes. Avalonia attaches its
+    /// own context when a text field takes focus, so there is no attach counterpart.
+    /// </summary>
+    void DetachIme(nint windowHandle) { }
+
+
+    /// <summary>
+    /// Draws the window title bar in dark or light colors. Only platforms whose title bar follows
+    /// the app theme implement this.
+    /// </summary>
+    void SetTitleBarDarkMode(nint windowHandle, bool isDark) { }
+
+
+    /// <summary>
+    /// Keeps the system and the display awake, e.g. while a slideshow plays. Best-effort.
+    /// </summary>
+    void PreventSleep(string reason) { }
+
+
+    /// <summary>
+    /// Releases the request held by <see cref="PreventSleep"/>.
+    /// </summary>
+    void AllowSleep() { }
 }

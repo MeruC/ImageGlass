@@ -3115,7 +3115,16 @@ public partial class ViewerCanvas : DXCanvas
         ImageLoading?.Invoke(this, EventArgs.Empty);
 
         // Check and preprocess image info
+        var oldSourceWidth = SourceWidth;
+        var oldSourceHeight = SourceHeight;
         LoadImageData(imgData, frameIndex, autoAnimate);
+
+        // the source size changed -> the current zoom factor and drawing region are stale
+        var isSourceSizeChanged = SourceWidth != oldSourceWidth || SourceHeight != oldSourceHeight;
+        if (isSourceSizeChanged)
+        {
+            resetZoom = true;
+        }
 
         if (imgData == null || imgData.IsImageNull)
         {

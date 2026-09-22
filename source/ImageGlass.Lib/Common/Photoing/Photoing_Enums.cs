@@ -92,9 +92,8 @@ public enum HdrToneMappingMode
     None,
 
     /// <summary>
-    /// BT.2408-style knee curve (default, closest to Chrome).
-    /// SDR content preserved; only super-white highlights are compressed
-    /// with a tight exponential shoulder starting at 0.9.
+    /// BT.2408 reference white with a smooth roll-off across the whole range (default).
+    /// Reference white lands near half SDR peak, matching how HDR photos are rendered to SDR.
     /// </summary>
     BT2408,
 
@@ -138,9 +137,15 @@ public enum HdrTransferFunction
     GainMap = 3,
 
     /// <summary>
-    /// Scene-referred linear HDR (e.g. OpenEXR, Radiance HDR, JPEG-XR floats).
-    /// No PQ/HLG transfer; pixels are already linear and may exceed 1.0.
+    /// Scene-referred linear HDR (e.g. OpenEXR, Radiance HDR).
+    /// No PQ/HLG transfer; pixels are linear, may exceed 1.0, and 1.0 IS diffuse white.
     /// </summary>
     Linear = 4,
+
+    /// <summary>
+    /// scRGB extended-range linear (IEC 61966-2-2), what WIC infers for every float or
+    /// fixed-point format. Linear like <see cref="Linear"/>, but 1.0 is 80 nits, NOT white.
+    /// </summary>
+    ScRgb = 5,
 }
 

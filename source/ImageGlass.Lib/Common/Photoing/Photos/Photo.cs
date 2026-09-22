@@ -18,7 +18,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 using Avalonia;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using ImageGlass.Common.Extensions;
+using ImageGlass.Common.Loggers;
+using ImageGlass.Common.ServiceProviders;
+using ImageGlass.Common.ServiceProviders.FileSearchService;
 using ImageGlass.Common.Types;
 using ImageMagick;
 using SkiaSharp;
@@ -44,9 +48,18 @@ public partial class Photo : PhDisposable
     private readonly Lock _lock = new();
     private int _loadGeneration;
 
+    // serializes LoadAsync on this photo: a second loader joins the load in flight, never cancels it
+    private readonly SemaphoreSlim _loadGate = new(1, 1);
+    private int _cancelEpoch;
+
     // track pending tasks
     private ConcurrentDictionary<Guid, bool> _taskRefs = new();
+
+    // in-flight file writes across all photos; shutdown waits on this
+    private static int _pendingSaveCount;
+
     private CancellationTokenSource? _cancelThumbnailLoading;
+    private double _galleryThumbnailRequestSize;
 
     /// <summary>
     /// Prevents duplicate concurrent loads of the same photo's thumbnail.
@@ -54,10 +67,23 @@ public partial class Photo : PhDisposable
     private readonly SemaphoreSlim _thumbnailLock = new(1, 1);
 
     /// <summary>
-    /// Limits how many different Photo instances
-    /// load thumbnails concurrently across the entire app.
+    /// Rough transient cost of one thumbnail slot: a cache miss decodes the full image first.
     /// </summary>
-    private static readonly SemaphoreSlim _thumbnailThrottleLock = new(4, 4);
+    private const uint MB_PER_THUMBNAIL_SLOT = 128;
+
+    /// <summary>
+    /// Limits how many different Photo instances load thumbnails concurrently across the entire
+    /// app. Every in-flight slot can transiently hold one full-resolution decode, so the ceiling
+    /// follows the cache budget and only then the CPU. Lazy so it reads the loaded config.
+    /// </summary>
+    private static readonly Lazy<SemaphoreSlim> _thumbnailThrottleLock = new(() =>
+    {
+        var byCpu = Math.Clamp(Environment.ProcessorCount - 1, 4, 16);
+        var byBudget = (int)(Core.Config.CacheMaxMemoryInMb / MB_PER_THUMBNAIL_SLOT);
+        var slots = Math.Clamp(byBudget, 4, byCpu);
+
+        return new SemaphoreSlim(slots, slots);
+    });
 
 
 
@@ -84,6 +110,33 @@ public partial class Photo : PhDisposable
     /// Gets the height of the photo.
     /// </summary>
     public uint Height => (uint)Size.Height;
+
+    /// <summary>
+    /// Gets the bytes one decoded pixel occupies. Codec plugins can hand back 16-bit or
+    /// half-float frames, so this is not always 4; falls back to 4 before the decode.
+    /// </summary>
+    public int BytesPerPixel => Bitmap is SKImage img && !img.IsDisposed()
+        ? Math.Max(1, img.ColorType.GetBytesPerPixel())
+        : 4;
+
+    /// <summary>
+    /// Gets the linear scale this photo was decoded at. Below 1 when the full resolution
+    /// exceeded what the renderer can hold, so <see cref="Size"/> is smaller than the file.
+    /// </summary>
+    public double DecodeScale { get; private set; } = 1;
+
+    /// <summary>
+    /// Whether a load will decode the embedded RAW preview instead of the full image.
+    /// </summary>
+    public bool WillDecodeEmbeddedPreview => ReadOptions.OnlyLoadRawPreview
+        && Metadata.IsEmbeddedPreviewLargeEnough(ReadOptions.PreviewMinWidth, ReadOptions.PreviewMinHeight);
+
+    /// <summary>
+    /// Size a load is expected to produce, before it runs.
+    /// </summary>
+    public (uint Width, uint Height) EstimatedDecodeSize => WillDecodeEmbeddedPreview
+        ? (Metadata.PreviewWidth, Metadata.PreviewHeight)
+        : (Metadata.Width, Metadata.Height);
 
     /// <summary>
     /// Gets the current frame index of this photo.
@@ -236,7 +289,10 @@ public partial class Photo : PhDisposable
                 var old = field;
                 field = value;
                 _ = OnPropertyChanged();
-                old?.Dispose();
+
+                // Disposal is the UI thread's job: this usually runs on a worker, where freeing
+                // the old bitmap races the gallery still measuring it as its Image.Source.
+                if (old is not null) Dispatcher.UIThread.Post(old.Dispose, DispatcherPriority.Background);
             }
             catch (Exception ex)
             {
@@ -266,6 +322,14 @@ public partial class Photo : PhDisposable
         ReadOptions = options ?? new();
     }
 
+    /// <summary>
+    /// Initializes a photo with filesystem data captured by folder enumeration.
+    /// </summary>
+    public Photo(FileSearchEntry entry, PhotoReadOptions? options = null)
+    {
+        Metadata = new PhotoMetadata(entry);
+        ReadOptions = options ?? new();
+    }
 
     /// <summary>
     /// Initializes a new single-frame photo using a bitmap source for rendering.
@@ -308,7 +372,16 @@ public partial class Photo : PhDisposable
     {
         base.OnDisposing();
 
-        await OnDisposing(true);
+        // async void: anything escaping here lands on a worker thread as an unhandled
+        // exception, which FailFasts the process with no dialog and nothing logged
+        try
+        {
+            await OnDisposing(true).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"❌❌❌ {nameof(OnDisposing)}: {ex.Message}");
+        }
     }
 
 
@@ -321,6 +394,13 @@ public partial class Photo : PhDisposable
     private async Task OnDisposing(bool disposeEverything)
     {
         CancelLoading();
+
+        // let pinned background readers finish, else they read a freed bitmap
+        while (!_taskRefs.IsEmpty)
+        {
+            await Task.Delay(10).ConfigureAwait(false);
+        }
+
         UnloadBitmap();
 
         // dispose everything
@@ -335,16 +415,29 @@ public partial class Photo : PhDisposable
             // use WaitAsync/Release (never AvailableWaitHandle), so the SemaphoreSlim
             // holds no unmanaged handle and is reclaimed safely by the GC.
 
+            // only wait for it to settle; a faulted metadata load (e.g. a plugin codec
+            // throwing) must not turn disposal into an unhandled exception
             if (_taskMetadata is not null)
             {
-                await _taskMetadata;
+                try
+                {
+                    await _taskMetadata.ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"❌❌❌ {nameof(OnDisposing)}/metadata: {ex.Message}");
+                }
             }
 
             Metadata.Dispose();
             Metadata = new();
 
-            _cancelPhotoLoading?.Dispose();
-            _cancelPhotoLoading = null;
+            // same lock as CancelLoading, else it cancels a CTS we just disposed
+            lock (_lock)
+            {
+                _cancelPhotoLoading?.Dispose();
+                _cancelPhotoLoading = null;
+            }
         }
     }
 
@@ -375,6 +468,7 @@ public partial class Photo : PhDisposable
 
         _width = (uint)Metadata.Width;
         _height = (uint)Metadata.Height;
+        DecodeScale = 1;
 
         State = state;
     }
@@ -388,6 +482,8 @@ public partial class Photo : PhDisposable
             IsDestColorProfileSupported = Core.IsDestColorProfileSupported,
             LoadRawThumbnailOnly = ReadOptions.OnlyLoadRawPreview && meta.RawThumbnail is not null,
             LoadOtherThumbnailOnly = ReadOptions.OnlyLoadNonRawPreview && (meta.ExifProfile?.ThumbnailLength ?? 0) > 0,
+            PreviewMinWidth = ReadOptions.PreviewMinWidth,
+            PreviewMinHeight = ReadOptions.PreviewMinHeight,
         };
     }
 
@@ -399,6 +495,7 @@ public partial class Photo : PhDisposable
 
         _width = (uint)result.Size.Width;
         _height = (uint)result.Size.Height;
+        DecodeScale = result.DecodeScale;
 
         if (result.VectorSource is not null)
         {
@@ -440,11 +537,73 @@ public partial class Photo : PhDisposable
     private async Task OnDecodingAsync(PhotoMetadata meta, CancellationToken token)
     {
         var context = CreateCodecSelectionContext(meta);
-        var codec = Core.CodecRegistry.SelectDecodeCodec(meta, context)
-            ?? throw new FormatException("IGE: No codec available to decode the current file.");
+        var selectedCodec = Core.CodecRegistry.SelectDecodeCodec(meta, context);
+
+        // no registered codec claims the file -> let Magick try anyway, it sniffs the content
+        var isFallback = selectedCodec is null;
+        var codec = selectedCodec ?? Core.CodecRegistry.FallbackDecodeCodec;
+
+        // codec-agnostic trace: covers built-in and plugin codecs uniformly
+        var isPlugin = codec is not (SvgCodecAdapter or SkiaCodecAdapter or MagickCodecAdapter);
+        PhotoTrace.Mark("decode:codec", FilePath,
+            $"{codec.CodecId} (decodePriority={codec.DecodePriority}, plugin={isPlugin}, "
+            + $"fallback={isFallback}, frameIndex={ReadOptions.FrameIndex})");
 
         using var result = await codec.DecodeAsync(meta, ReadOptions, context, token).ConfigureAwait(false);
+
+        // describe before ApplyDecodeResult nulls out the result fields (moves them to Bitmap)
+        if (PhotoTrace.Enabled) PhotoTrace.Mark("decode:done", FilePath, $"kind={DescribeDecodeResult(result)}");
+
+        // a codec that claimed the file but decoded no frame would leave the viewer blank
+        var fallbackCodec = Core.CodecRegistry.FallbackDecodeCodec;
+        if (IsEmptyDecodeResult(result) && !isFallback && !ReferenceEquals(codec, fallbackCodec))
+        {
+            token.ThrowIfCancellationRequested();
+            PhotoTrace.Mark("decode:retry-fallback", FilePath, $"{codec.CodecId} decoded no frame");
+
+            using var fallbackResult = await fallbackCodec
+                .DecodeAsync(meta, ReadOptions, context, token).ConfigureAwait(false);
+
+            if (PhotoTrace.Enabled) PhotoTrace.Mark("decode:done", FilePath,
+                $"kind={DescribeDecodeResult(fallbackResult)} (fallback)");
+
+            ApplyDecodeResult(fallbackResult);
+            return;
+        }
+
         ApplyDecodeResult(result);
+    }
+
+
+    /// <summary>
+    /// Whether a decode produced no usable source at all.
+    /// </summary>
+    private static bool IsEmptyDecodeResult(CodecDecodeResult result) =>
+        result.VectorSource is null && result.Animator is null && result.SingleFrame is null;
+
+
+    /// <summary>
+    /// Formats a decode result for <see cref="PhotoTrace"/> (source kind + dimensions/color type).
+    /// </summary>
+    private static string DescribeDecodeResult(CodecDecodeResult result)
+    {
+        if (result.VectorSource is not null) return "vector";
+        if (result.Animator is not null) return $"animator frames={result.Animator.Frames.Length}";
+        if (result.SingleFrame is SKImage img)
+            return $"single-frame {img.Width}x{img.Height} colorType={img.ColorType}";
+        return "none";
+    }
+
+
+    /// <summary>
+    /// Formats key metadata for <see cref="PhotoTrace"/> (dimensions, frames, HDR, color profile).
+    /// </summary>
+    private static string DescribeMetadata(PhotoMetadata meta)
+    {
+        var hdr = meta.IsHdr ? $"HDR({meta.HdrTransferFn})" : "SDR";
+        var profile = string.IsNullOrEmpty(meta.ColorProfileName) ? "none" : meta.ColorProfileName;
+        return $"{meta.Width}x{meta.Height} frames={meta.FrameCount} ext={meta.FileExtension} "
+            + $"vector={meta.IsVector} {hdr} wideGamut={meta.IsWideGamut} bpc={meta.BitsPerChannel} profile={profile}";
     }
 
 
@@ -469,18 +628,45 @@ public partial class Photo : PhDisposable
     /// </summary>
     public async void Unload()
     {
-        // wait for all pending tasks are done
-        while (!_taskRefs.IsEmpty)
+        // async void: an escaping exception here would FailFast the process from a worker thread
+        try
         {
-            await Task.Delay(10);
+            // wait for all pending tasks are done
+            while (!_taskRefs.IsEmpty)
+            {
+                await Task.Delay(10).ConfigureAwait(false);
+            }
+
+            // reset info
+            State = PhotoState.None;
+            Error = null;
+
+            // unload image
+            await OnDisposing(false).ConfigureAwait(false);
         }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"❌❌❌ {nameof(Unload)}: {ex.Message}");
+        }
+    }
 
-        // reset info
-        State = PhotoState.None;
-        Error = null;
 
-        // unload image
-        await OnDisposing(false);
+    /// <summary>
+    /// Pins <see cref="Bitmap"/> for a background operation so <see cref="Unload"/> waits for it
+    /// instead of disposing the image mid-use. Dispose the returned scope when done.
+    /// </summary>
+    public IDisposable PinBitmap()
+    {
+        var taskId = Guid.NewGuid();
+        _ = _taskRefs.TryAdd(taskId, true);
+
+        return new BitmapPin(this, taskId);
+    }
+
+
+    private sealed class BitmapPin(Photo photo, Guid taskId) : IDisposable
+    {
+        public void Dispose() => photo._taskRefs.TryRemove(taskId, out _);
     }
 
 
@@ -507,6 +693,19 @@ public partial class Photo : PhDisposable
     [MemberNotNull(nameof(_cancelPhotoLoading))]
     public virtual CancellationToken CancelLoading()
     {
+        // a cancel must also drop a load still queued behind another one, which holds no token yet
+        _ = Interlocked.Increment(ref _cancelEpoch);
+
+        return ResetCancelToken();
+    }
+
+
+    /// <summary>
+    /// Replaces the loading token without counting as a cancel of a queued load.
+    /// </summary>
+    [MemberNotNull(nameof(_cancelPhotoLoading))]
+    private CancellationToken ResetCancelToken()
+    {
         lock (_lock)
         {
             _cancelPhotoLoading?.Cancel();
@@ -521,15 +720,73 @@ public partial class Photo : PhDisposable
     /// <summary>
     /// Loads photo from file.
     /// </summary>
+    /// <remarks>
+    /// Serialized per photo: cancelling a load in flight instead left its caller with no Loaded event.
+    /// </remarks>
     public virtual async Task LoadAsync(bool useCache,
         Func<PhotoLoadingEventArgs, Task>? handleProgressFn = null,
         bool skipLoadingEvent = false)
     {
         // use cached data
-        if (useCache && State != PhotoState.None) return;
-        var token = CancelLoading();
+        if (useCache && State != PhotoState.None)
+        {
+            PhotoTrace.Mark("load:cache-hit", FilePath, $"state={State}");
+            await DispatchLoadedAsync(handleProgressFn);
+            return;
+        }
+
+        // no ConfigureAwait(false) below: handleProgressFn renders, so it resumes on the UI thread
+        var epoch = Volatile.Read(ref _cancelEpoch);
+        await _loadGate.WaitAsync();
+        try
+        {
+            // cancelled while queued, i.e. the caller navigated away before we got our turn
+            if (Volatile.Read(ref _cancelEpoch) != epoch)
+            {
+                PhotoTrace.Mark("load:queued-cancel", FilePath, $"state={State}");
+                return;
+            }
+
+            // the load we queued behind may have decoded the photo already
+            if (useCache && State != PhotoState.None)
+            {
+                PhotoTrace.Mark("load:cache-hit", FilePath, $"state={State}, afterGate=True");
+                await DispatchLoadedAsync(handleProgressFn);
+                return;
+            }
+
+            await LoadAsync__(useCache, handleProgressFn, skipLoadingEvent);
+        }
+        finally
+        {
+            _ = _loadGate.Release();
+        }
+    }
+
+
+    /// <summary>
+    /// Raises Loaded for an already-decoded photo, so a cache hit still tells its caller to render.
+    /// </summary>
+    private async Task DispatchLoadedAsync(Func<PhotoLoadingEventArgs, Task>? handleProgressFn)
+    {
+        if (handleProgressFn is null || State != PhotoState.Loaded) return;
+
+        // CancellationToken.None: the decode is done, there is nothing left to abort
+        await handleProgressFn(new(PhotoState.Loaded, this, CancellationToken.None));
+    }
+
+
+    /// <summary>
+    /// The load itself; runs one at a time per photo.
+    /// </summary>
+    private async Task LoadAsync__(bool useCache,
+        Func<PhotoLoadingEventArgs, Task>? handleProgressFn,
+        bool skipLoadingEvent)
+    {
+        var token = ResetCancelToken();
         var myGeneration = Interlocked.Increment(ref _loadGeneration);
 
+        PhotoTrace.Begin(FilePath, $"useCache={useCache}, skipLoadingEvent={skipLoadingEvent}");
         try
         {
             // reset dispose status
@@ -543,12 +800,14 @@ public partial class Photo : PhDisposable
             if (token.IsCancellationRequested) return;
 
             // load metadata
-            await LoadMetadataAsync(useCache);
+            await LoadMetadataAsync(useCache, token: token);
+            PhotoTrace.Mark("metadata:loaded", FilePath, DescribeMetadata(Metadata));
 
             if (!skipLoadingEvent)
             {
                 if (handleProgressFn is not null)
                 {
+                    PhotoTrace.Mark("preview:dispatch", FilePath);
                     await handleProgressFn(new(PhotoState.Preview, this, token));
                 }
             }
@@ -567,11 +826,17 @@ public partial class Photo : PhDisposable
                     await OnDecodingAsync(Metadata, token);
                     return null;
                 }
+                catch (TaskCanceledException)
+                {
+                    return null;
+                }
                 catch (Exception ex)
                 {
                     return ex;
                 }
             }, token, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
+
+            if (Error is not null) PhotoTrace.Mark("decode:error", FilePath, Error.Message);
 
             // cancel if requested
             if (token.IsCancellationRequested) return;
@@ -579,15 +844,21 @@ public partial class Photo : PhDisposable
 
             // done loading
             State = PhotoState.Loaded;
+            PhotoTrace.Mark("loaded:dispatch", FilePath, $"hasError={Error is not null}");
             if (handleProgressFn is not null)
             {
                 await handleProgressFn(new(PhotoState.Loaded, this, token));
             }
         }
+        catch (TaskCanceledException)
+        {
+            State = PhotoState.None;
+        }
         catch (Exception ex)
         {
             Error = ex;
             State = PhotoState.Loaded;
+            PhotoTrace.Mark("load:exception", FilePath, ex.Message);
             if (handleProgressFn is not null)
             {
                 await handleProgressFn(new(PhotoState.Loaded, this, token));
@@ -595,6 +866,8 @@ public partial class Photo : PhDisposable
         }
         finally
         {
+            PhotoTrace.End(FilePath, $"state={State}, cancelled={token.IsCancellationRequested}");
+
             // only unload if no newer load has started on this Photo;
             // a newer LoadAsync increments _loadGeneration, so if ours
             // is stale, calling Unload would cancel the newer load
@@ -611,9 +884,10 @@ public partial class Photo : PhDisposable
     /// Loads <c><see cref="Metadata"/></c> for the photo.
     /// Returns the cached metadata if it's not null and up-to-date.
     /// </summary>
-    public async Task LoadMetadataAsync(bool useCache, PhotoReadOptions? newOptions = null)
+    public async Task LoadMetadataAsync(bool useCache, PhotoReadOptions? newOptions = null, CancellationToken token = default)
     {
-        var meta = await Task.Run(() => LoadMetadataAsync__(useCache, newOptions)).ConfigureAwait(false);
+        var task = Task.Run(() => LoadMetadataAsync__(useCache, newOptions));
+        var meta = await task.WaitAsync(token).ConfigureAwait(false);
 
         if (meta is not null)
         {
@@ -649,6 +923,8 @@ public partial class Photo : PhDisposable
             if (hasOutdatedCache)
             {
                 var metadataCodec = Core.CodecRegistry.SelectMetadataCodec(FilePath);
+                PhotoTrace.Mark("metadata:codec", FilePath,
+                    metadataCodec is null ? "none (fallback)" : $"{metadataCodec.CodecId} (metaPriority={metadataCodec.MetadataPriority})");
 
                 // load metadata off-thread
                 if (metadataCodec is not null)
@@ -754,6 +1030,41 @@ public partial class Photo : PhDisposable
 
 
     /// <summary>
+    /// Decodes a fresh copy of the given frame directly from the source, WITHOUT touching the cached
+    /// <see cref="Bitmap"/> or the current frame index. The caller owns the returned image. Used by
+    /// the viewer to (re)capture the pre-tone-map HDR frame for live re-tone-mapping without a full,
+    /// display-disrupting reload.
+    /// </summary>
+    public async Task<SKImage?> DecodeStaticFrameAsync(uint frameIndex, CancellationToken token = default)
+    {
+        var newFrameIndex = (int)frameIndex;
+
+        return await Task.Factory.StartNew(async () =>
+        {
+            var options = ReadOptions with { FrameIndex = newFrameIndex };
+            var context = CreateCodecSelectionContext(Metadata);
+            var codec = Core.CodecRegistry.SelectDecodeCodec(Metadata, context);
+            if (codec is not null)
+            {
+                using var result = await codec.DecodeAsync(Metadata, options, context, token).ConfigureAwait(false);
+                if (result.SingleFrame is SKImage sf)
+                {
+                    // detach so the result's dispose doesn't free the returned image
+                    var detached = sf;
+                    result.SingleFrame = null;
+                    return detached;
+                }
+            }
+
+            // fallback: direct Magick decode
+            using var data = await MagickCodec.DecodeImageAsync(Metadata, options,
+                GetOrCreateMagickReadSettings(), null, token);
+            return SkiaCodec.FromMagick(data.SingleFrame, Metadata.SkiaColorSpace, Metadata.IsHdr);
+        }, token, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
+    }
+
+
+    /// <summary>
     /// Saves the photo to file.
     /// </summary>
     /// <exception cref="Exception"></exception>
@@ -763,35 +1074,41 @@ public partial class Photo : PhDisposable
     {
         var taskId = Guid.NewGuid();
         _ = _taskRefs.TryAdd(taskId, true);
+        _ = Interlocked.Increment(ref _pendingSaveCount);
 
         try
         {
             var lastWriteTime = File.GetLastWriteTime(destFilePath);
 
+            // 0. a plugin encoder claiming this extension wins; otherwise fall through unchanged
+            var handled = await CodecEncodePipeline.TryEncodeAsync(this, destFilePath, transforms, quality, token);
+
             // 1. save clipboard photo to file
-            if (IsClipboard && Bitmap is SKImage img)
+            if (!handled && IsClipboard && Bitmap is SKImage img)
             {
-                await Task.Factory.StartNew(async () =>
-                {
-                    await SkiaCodec.SaveAsync(img, destFilePath, transforms, quality, token);
-                }, token, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
+                await SaveStaging.WriteThenPromoteAsync(destFilePath, stagePath =>
+                    Task.Factory.StartNew(async () =>
+                    {
+                        await SkiaCodec.SaveAsync(img, stagePath, transforms, quality, token);
+                    }, token, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap(), token);
             }
 
             // 2. save photo to file
-            else
+            else if (!handled)
             {
-                await Task.Factory.StartNew(async () =>
+                // update read options
+                var readOptions = ReadOptions with
                 {
-                    // update read options
-                    var readOptions = ReadOptions with
-                    {
-                        FrameIndex = Metadata.FrameCount > 1
-                            ? -1 // save all frame
-                            : ReadOptions.FrameIndex, // save only current frame
-                    };
+                    FrameIndex = Metadata.FrameCount > 1
+                        ? -1 // save all frame
+                        : ReadOptions.FrameIndex, // save only current frame
+                };
 
-                    await MagickCodec.SaveAsync(Metadata, destFilePath, readOptions, transforms, quality, token);
-                }, token, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
+                await SaveStaging.WriteThenPromoteAsync(destFilePath, stagePath =>
+                    Task.Factory.StartNew(async () =>
+                    {
+                        await MagickCodec.SaveAsync(Metadata, stagePath, readOptions, transforms, quality, token);
+                    }, token, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap(), token);
             }
 
 
@@ -804,7 +1121,28 @@ public partial class Photo : PhDisposable
         catch (OperationCanceledException) { }
         finally
         {
+            _ = Interlocked.Decrement(ref _pendingSaveCount);
             _ = _taskRefs.TryRemove(taskId, out _);
+        }
+    }
+
+
+    /// <summary>
+    /// Number of file writes currently in flight across all photos.
+    /// </summary>
+    public static int PendingSaveCount => Volatile.Read(ref _pendingSaveCount);
+
+
+    /// <summary>
+    /// Waits until every in-flight save has finished, so the app cannot tear down mid-write.
+    /// </summary>
+    public static async Task WaitForPendingSavesAsync(TimeSpan timeout)
+    {
+        var startedAt = Stopwatch.StartNew();
+
+        while (Volatile.Read(ref _pendingSaveCount) > 0 && startedAt.Elapsed < timeout)
+        {
+            await Task.Delay(20).ConfigureAwait(false);
         }
     }
 
@@ -814,7 +1152,13 @@ public partial class Photo : PhDisposable
     /// </summary>
     public void CancelThumbnailLoading()
     {
-        _cancelThumbnailLoading?.Cancel();
+        // _thumbnailLock is deliberately not held here so the holder sees the cancel and
+        // releases sooner, which means it may be disposing this CTS right now
+        try
+        {
+            _cancelThumbnailLoading?.Cancel();
+        }
+        catch (ObjectDisposedException) { }
     }
 
 
@@ -833,87 +1177,117 @@ public partial class Photo : PhDisposable
     /// Uses a semaphore to ensure only one load per photo at a time,
     /// and caches the result on <see cref="GalleryThumbnail"/>.
     /// </summary>
-    public async Task LoadThumbnailAsync(double thumbSize, bool useCache)
+    public async Task LoadThumbnailAsync(double thumbSize, bool useCache, CancellationToken cancellationToken = default)
     {
         // 1. fast path: use cached thumbnail
-        if (useCache && GalleryThumbnail is not null) return;
+        if (useCache && GalleryThumbnail is not null && _galleryThumbnailRequestSize == thumbSize) return;
         if (IsDisposed || string.IsNullOrEmpty(FilePath)) return;
 
         // 2. acquire global throttle to avoid saturating the thread pool
         //    (prevents blocking the main image loading when many thumbnails load at once)
-        await _thumbnailThrottleLock.WaitAsync().ConfigureAwait(false);
+        await _thumbnailThrottleLock.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
-            await _thumbnailLock.WaitAsync().ConfigureAwait(false);
+            await _thumbnailLock.WaitAsync(cancellationToken).ConfigureAwait(false);
 
             try
             {
                 // 3. double-check after acquiring the lock
-                if (useCache && GalleryThumbnail is not null) return;
+                if (useCache && GalleryThumbnail is not null && _galleryThumbnailRequestSize == thumbSize) return;
                 if (IsDisposed) return;
 
                 // reset cancellation for this load
                 _cancelThumbnailLoading?.Dispose();
-                _cancelThumbnailLoading = new CancellationTokenSource();
+                _cancelThumbnailLoading = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 var token = _cancelThumbnailLoading.Token;
 
 
-                // 4. load metadata if needed
-                await LoadMetadataAsync(true).ConfigureAwait(false);
-                if (token.IsCancellationRequested) return;
+                // 4. try caches without reading the source file
+                using var diskThumb = useCache
+                    ? await ThumbnailDiskCache.TryGetAsync(
+                        FilePath, (int)thumbSize, Metadata.FileLastWriteTimeUtc, token)
+                        .ConfigureAwait(false)
+                    : null;
+                var didProbePlatformCache = useCache && diskThumb.IsDisposed();
+                using var platformThumb = didProbePlatformCache
+                    ? await Core.PreviewProvider.TryGetCachedThumbnailAsync(
+                        FilePath, (int)thumbSize, token).ConfigureAwait(false)
+                    : null;
+                var cachedThumb = platformThumb ?? diskThumb;
 
-
-                // 4b. try disk cache
-                var diskThumb = await ThumbnailDiskCache.TryGetAsync(FilePath, (int)thumbSize, token)
-                    .ConfigureAwait(false);
-                if (token.IsCancellationRequested) return;
-
-                if (diskThumb is not null)
+                if (!cachedThumb.IsDisposed())
                 {
-                    var avBitmapCached = await Task.Run(
-                        () => SkiaCodec.ToWritableBitmap(diskThumb), token)
-                        .ConfigureAwait(false);
-                    diskThumb.Dispose();
+                    // the Shell hands back whole cache tiers; retaining one costs MBs per photo
+                    using var scaledThumb = thumbSize > 0
+                        && (cachedThumb.Width > thumbSize || cachedThumb.Height > thumbSize)
+                        ? await Task.Run(() => SkiaCodec.ScaleDown(cachedThumb, thumbSize), token)
+                            .ConfigureAwait(false)
+                        : null;
 
-                    if (token.IsCancellationRequested)
+                    var avBitmapCached = await Task.Run(
+                        () => SkiaCodec.ToWritableBitmap(scaledThumb ?? cachedThumb), token)
+                        .ConfigureAwait(false);
+
+                    if (avBitmapCached is null) return;
+                    if (!await ShowGalleryThumbnailAsync(avBitmapCached, token)) return;
+
+                    // The requested size includes a supersampling margin.
+                    // If the cached image is smaller than the displayed size,
+                    // show it now but keep looking for a sharper replacement.
+                    var cachedThumbMayBeTooSmall = thumbSize > 0
+                        && Math.Max(cachedThumb.Width, cachedThumb.Height)
+                            < thumbSize * PhotoPreviewProvider.MIN_PREVIEW_SIZE_RATIO;
+                    if (!cachedThumbMayBeTooSmall)
                     {
-                        avBitmapCached?.Dispose();
+                        _galleryThumbnailRequestSize = thumbSize;
                         return;
                     }
+                }
 
-                    GalleryThumbnail?.Dispose();
-                    GalleryThumbnail = avBitmapCached;
+                // 5. load metadata if needed
+                await LoadMetadataAsync(true, token: token).ConfigureAwait(false);
+                if (token.IsCancellationRequested) return;
+
+                // a small source cannot produce a larger thumbnail.
+                if (PhotoPreviewProvider.IsPreviewLargeEnough(cachedThumb, Metadata, thumbSize))
+                {
+                    _galleryThumbnailRequestSize = thumbSize;
                     return;
                 }
 
 
-                // 5. get thumbnail from platform provider
+                // 6. get thumbnail from platform provider
+                PhotoTrace.Mark("thumb:provider", null, $"{FilePath} @ {(int)thumbSize}px");
+                var swThumb = PhotoTrace.Enabled ? Stopwatch.StartNew() : null;
                 using var skThumb = await Task.Run(
-                    () => Core.PreviewProvider.GetThumbnailAsync(Metadata, thumbSize, token), token)
+                    () => Core.PreviewProvider.GetThumbnailAsync(
+                        Metadata, thumbSize, token, didProbePlatformCache), token)
                     .ConfigureAwait(false);
                 if (token.IsCancellationRequested || skThumb.IsDisposed()) return;
 
+                if (swThumb is not null)
+                {
+                    PhotoTrace.Mark("thumb:provider-done", null,
+                        $"{FilePath} -> {skThumb.Width}x{skThumb.Height} in {swThumb.ElapsedMilliseconds}ms");
+                }
 
-                // 5b. write to disk cache (fire-and-forget, encoding is synchronous)
-                _ = ThumbnailDiskCache.PutAsync(FilePath, (int)thumbSize, skThumb, token);
 
-
-                // 6. convert SKImage to Avalonia Bitmap
+                // 7. convert SKImage to Avalonia Bitmap
                 var avBitmap = await Task.Run(
                     () => SkiaCodec.ToWritableBitmap(skThumb), token)
                     .ConfigureAwait(false);
 
-                if (token.IsCancellationRequested)
-                {
-                    avBitmap?.Dispose();
-                    return;
-                }
+                // 8. update the gallery thumbnail (triggers UI binding update)
+                if (avBitmap is null) return;
+                if (!await ShowGalleryThumbnailAsync(avBitmap, token)) return;
+                _galleryThumbnailRequestSize = thumbSize;
 
 
-                // 7. update the gallery thumbnail (triggers UI binding update)
-                GalleryThumbnail?.Dispose();
-                GalleryThumbnail = avBitmap;
+                // 9. write to disk cache last, so encoding never delays the thumbnail appearing.
+                // Awaited (not fire-and-forget) to keep skThumb alive until the encode is done.
+                await ThumbnailDiskCache.PutAsync(FilePath, (int)thumbSize, skThumb, token)
+                    .ConfigureAwait(false);
             }
             catch (OperationCanceledException) { }
             catch (Exception ex)
@@ -927,7 +1301,7 @@ public partial class Photo : PhDisposable
         }
         finally
         {
-            _thumbnailThrottleLock.Release();
+            _thumbnailThrottleLock.Value.Release();
         }
     }
 
@@ -939,7 +1313,7 @@ public partial class Photo : PhDisposable
     {
         // Signal cancellation first so any in-progress load
         // can exit early and release the lock sooner.
-        _cancelThumbnailLoading?.Cancel();
+        CancelThumbnailLoading();
 
         await _thumbnailLock.WaitAsync().ConfigureAwait(false);
         try
@@ -947,13 +1321,44 @@ public partial class Photo : PhDisposable
             _cancelThumbnailLoading?.Dispose();
             _cancelThumbnailLoading = null;
 
-            GalleryThumbnail?.Dispose();
-            GalleryThumbnail = null;
+            await ClearGalleryThumbnailAsync();
         }
         finally
         {
             _thumbnailLock.Release();
         }
+    }
+
+
+    private async Task<bool> ShowGalleryThumbnailAsync(Bitmap thumbnail, CancellationToken token)
+    {
+        if (token.IsCancellationRequested || IsDisposed)
+        {
+            thumbnail.Dispose();
+            return false;
+        }
+
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (token.IsCancellationRequested || IsDisposed)
+            {
+                thumbnail.Dispose();
+                return false;
+            }
+
+            GalleryThumbnail = thumbnail;
+            return true;
+        });
+    }
+
+
+    private async Task ClearGalleryThumbnailAsync()
+    {
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            GalleryThumbnail = null;
+            _galleryThumbnailRequestSize = 0;
+        });
     }
 
 

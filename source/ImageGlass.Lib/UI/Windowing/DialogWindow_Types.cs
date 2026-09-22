@@ -47,6 +47,10 @@ public enum DialogButton
     Button1,
     Button2,
     Button3,
+
+    // no default button: SetDefaultButton applies no accent (e.g. an info dialog whose only
+    // footer button is a neutral Close)
+    None,
 }
 
 

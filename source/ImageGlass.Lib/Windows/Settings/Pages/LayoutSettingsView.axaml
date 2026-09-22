@@ -1,0 +1,234 @@
+<windows:SettingsPageView
+    x:Class="ImageGlass.Common.Windows.LayoutSettingsView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:types="using:ImageGlass.Common.Types"
+    xmlns:ui="using:ImageGlass.UI"
+    xmlns:windows="using:ImageGlass.Common.Windows"
+    mc:Ignorable="d"
+    d:DesignWidth="600"
+    HorizontalAlignment="Stretch">
+
+    <windows:SettingsPageView.Resources>
+        <!--  Shared width: image-info tags box and the layout arranger line up  -->
+        <x:Double x:Key="LayoutSectionWidth">460</x:Double>
+    </windows:SettingsPageView.Resources>
+
+
+    <windows:SettingsPageView.Styles>
+        <!--  An empty drop slot in the layout arranger  -->
+        <Style Selector="Border.zone">
+            <Setter Property="Padding" Value="4" />
+            <Setter Property="CornerRadius" Value="{DynamicResource ControlCornerRadius}" />
+            <Setter Property="Background" Value="{DynamicResource IG_BackgroundNeutralBrush}" />
+        </Style>
+
+        <!--  Horizontal bar slots (toolbar / gallery top & bottom): fixed height so nothing reflows  -->
+        <Style Selector="Border.zone.bar">
+            <Setter Property="Height" Value="44" />
+        </Style>
+
+        <!--  Side slots (gallery left / right): fixed width, fill the row height  -->
+        <Style Selector="Border.zone.side">
+            <Setter Property="Width" Value="88" />
+        </Style>
+
+        <!--  Dashed outline overlay, shown only while dragging  -->
+        <Style Selector="Rectangle.zoneDash">
+            <Setter Property="IsVisible" Value="False" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="Stretch" Value="Fill" />
+            <Setter Property="Margin" Value="1" />
+            <Setter Property="RadiusX" Value="6" />
+            <Setter Property="RadiusY" Value="6" />
+            <Setter Property="StrokeThickness" Value="1.5" />
+            <Setter Property="StrokeDashArray" Value="4,3" />
+            <Setter Property="StrokeLineCap" Value="Round" />
+            <Setter Property="Stroke" Value="{DynamicResource ZoneGrayStroke}" />
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.12" />
+                    <BrushTransition Property="Stroke" Duration="0:0:0.12" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Rectangle.zoneDash.valid">
+            <Setter Property="IsVisible" Value="True" />
+            <Setter Property="Opacity" Value="0.55" />
+        </Style>
+        <Style Selector="Rectangle.zoneDash.hover">
+            <Setter Property="IsVisible" Value="True" />
+            <Setter Property="Opacity" Value="0.95" />
+            <Setter Property="Stroke" Value="{DynamicResource ZoneAccentBorder}" />
+        </Style>
+        <!--  The viewer placeholder at the center  -->
+        <Style Selector="Border.viewer">
+            <Setter Property="CornerRadius" Value="{DynamicResource ControlCornerRadius}" />
+            <Setter Property="Background" Value="{DynamicResource IG_BackgroundNeutralBrush}" />
+        </Style>
+        <!--  Faint label shown inside an empty slot  -->
+        <Style Selector="TextBlock.slotLabel">
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextAlignment" Value="Center" />
+            <Setter Property="Opacity" Value="0.5" />
+            <Setter Property="FontSize" Value="{x:Static types:Const.FONT_SIZE_SMALL}" />
+        </Style>
+    </windows:SettingsPageView.Styles>
+
+
+    <StackPanel Orientation="Vertical">
+
+        <!--  Controls  -->
+        <ui:PhTextBlock Classes="group" LangKey="Settings_Controls" />
+        <StackPanel Margin="{DynamicResource SettingsGroupIndent}">
+
+            <!--  Position dropdowns  -->
+            <StackPanel Orientation="Horizontal" Spacing="14">
+                <StackPanel Spacing="{DynamicResource SettingsLabelInputGap}">
+                    <ui:PhTextBlock LangKey="Settings_Layout_ToolbarPosition" />
+                    <ComboBox x:Name="PART_ToolbarPosition" MinWidth="200" />
+                </StackPanel>
+                <StackPanel Spacing="{DynamicResource SettingsLabelInputGap}">
+                    <ui:PhTextBlock LangKey="Settings_Layout_GalleryPosition" />
+                    <ComboBox x:Name="PART_GalleryPosition" MinWidth="200" />
+                </StackPanel>
+            </StackPanel>
+
+            <!--  Drag-and-drop arranger  -->
+            <ui:PhTextBlock
+                MaxWidth="{StaticResource TextContentMaxWidth}"
+                Margin="0,14,0,8"
+                HorizontalAlignment="Left"
+                LangKey="Settings_Layout_ArrangeHint"
+                Opacity="0.7"
+                TextWrapping="Wrap" />
+
+            <Border
+                x:Name="PART_Preview"
+                Width="{StaticResource LayoutSectionWidth}"
+                Height="330"
+                Padding="12"
+                HorizontalAlignment="Left"
+                Background="{DynamicResource IG_ThemeBackgroundBrush}"
+                BorderBrush="{DynamicResource TextControlBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="{DynamicResource ControlCornerRadius}">
+                <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="8">
+
+                    <!--  Toolbar - top  -->
+                    <Grid Grid.Row="0">
+                        <Border Classes="zone bar">
+                            <Grid x:Name="PART_ZoneToolbarTop" />
+                        </Border>
+                        <Rectangle Classes="zoneDash" />
+                    </Grid>
+
+                    <!--  Gallery - top  -->
+                    <Grid Grid.Row="1">
+                        <Border Classes="zone bar">
+                            <Grid x:Name="PART_ZoneGalleryTop" />
+                        </Border>
+                        <Rectangle Classes="zoneDash" />
+                    </Grid>
+
+                    <!--  Gallery left | Viewer | Gallery right  -->
+                    <Grid
+                        Grid.Row="2"
+                        ColumnDefinitions="Auto,*,Auto"
+                        ColumnSpacing="8">
+                        <Grid Grid.Column="0">
+                            <Border Classes="zone side">
+                                <Grid x:Name="PART_ZoneGalleryLeft" />
+                            </Border>
+                            <Rectangle Classes="zoneDash" />
+                        </Grid>
+                        <Border Grid.Column="1" Classes="viewer">
+                            <ui:PhTextBlock
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                LangKey="Settings_Layout_Viewer"
+                                Opacity="0.5" />
+                        </Border>
+                        <Grid Grid.Column="2">
+                            <Border Classes="zone side">
+                                <Grid x:Name="PART_ZoneGalleryRight" />
+                            </Border>
+                            <Rectangle Classes="zoneDash" />
+                        </Grid>
+                    </Grid>
+
+                    <!--  Gallery - bottom  -->
+                    <Grid Grid.Row="3">
+                        <Border Classes="zone bar">
+                            <Grid x:Name="PART_ZoneGalleryBottom" />
+                        </Border>
+                        <Rectangle Classes="zoneDash" />
+                    </Grid>
+
+                    <!--  Toolbar - bottom  -->
+                    <Grid Grid.Row="4">
+                        <Border Classes="zone bar">
+                            <Grid x:Name="PART_ZoneToolbarBottom" />
+                        </Border>
+                        <Rectangle Classes="zoneDash" />
+                    </Grid>
+
+                    <!--  Topmost overlay that hosts the floating chip while dragging  -->
+                    <Canvas
+                        x:Name="PART_DragLayer"
+                        Grid.Row="0"
+                        Grid.RowSpan="5"
+                        IsHitTestVisible="False" />
+                </Grid>
+            </Border>
+
+        </StackPanel>
+
+
+
+        <!--  Window  -->
+        <ui:PhTextBlock Classes="group" LangKey="Settings_Window" />
+        <StackPanel Margin="{DynamicResource SettingsGroupIndent}">
+            <CheckBox x:Name="PART_ShowAppIcon" IsVisible="{OnPlatform False, Windows=True, x:TypeArguments=x:Boolean}">
+                <ui:PhTextBlock LangKey="Settings_ShowAppIcon" TextWrapping="Wrap" />
+            </CheckBox>
+            <CheckBox x:Name="PART_EnableCenterWindowFit">
+                <ui:PhTextBlock LangKey="Settings_EnableCenterWindowFit" TextWrapping="Wrap" />
+            </CheckBox>
+
+            <!--  Image information tags  -->
+            <StackPanel Margin="0,10,0,0" Spacing="{DynamicResource SettingsLabelInputGap}">
+                <ui:PhTextBlock FontWeight="SemiBold" LangKey="Settings_ImageInfoTags" />
+                <ui:PhTextBox
+                    x:Name="PART_ImageInfoTags"
+                    Width="{StaticResource LayoutSectionWidth}"
+                    MinHeight="70"
+                    HorizontalAlignment="Left"
+                    AcceptsReturn="True"
+                    FontFamily="{x:Static types:Const.FONT_CODE}"
+                    TextWrapping="Wrap" />
+                <ui:PhButton
+                    x:Name="PART_ResetImageInfoTags"
+                    HorizontalAlignment="Left"
+                    Variant="Link" />
+
+                <ui:PhTextBlock Margin="0,8,0,0" LangKey="Settings_AvailableImageInfoTags" />
+                <SelectableTextBlock
+                    x:Name="PART_AvailableTags"
+                    MaxWidth="{StaticResource LayoutSectionWidth}"
+                    HorizontalAlignment="Left"
+                    FontFamily="{x:Static types:Const.FONT_CODE}"
+                    FontSize="{x:Static types:Const.FONT_SIZE_SMALL}"
+                    Opacity="0.7"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+        </StackPanel>
+
+
+    </StackPanel>
+
+</windows:SettingsPageView>

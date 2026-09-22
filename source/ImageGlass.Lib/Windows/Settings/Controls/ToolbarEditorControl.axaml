@@ -1,0 +1,152 @@
+<ui:PhControl
+    x:Class="ImageGlass.Common.Windows.ToolbarEditorControl"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="using:ImageGlass.UI"
+    mc:Ignorable="d"
+    d:DesignWidth="760"
+    HorizontalAlignment="Stretch">
+
+    <ui:PhControl.Styles>
+        <!--
+            A drop zone hosting a wrapped row of button chips: soft neutral fill, unchanged while
+            dragging (only the dashed outline below reacts).
+        -->
+        <Style Selector="Border.zone">
+            <Setter Property="Padding" Value="8" />
+            <Setter Property="MinHeight" Value="56" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Background" Value="{DynamicResource IG_BackgroundNeutralBrush}" />
+        </Style>
+
+        <!--
+            Dashed outline overlay, shown only while dragging: gray for a valid zone, accent under the cursor.
+            A small Margin keeps the 1.5px stroke from being clipped at the zone edges.
+        -->
+        <Style Selector="Rectangle.zoneDash">
+            <Setter Property="IsVisible" Value="False" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="Stretch" Value="Fill" />
+            <Setter Property="Margin" Value="1" />
+            <Setter Property="RadiusX" Value="6" />
+            <Setter Property="RadiusY" Value="6" />
+            <Setter Property="StrokeThickness" Value="1.5" />
+            <Setter Property="StrokeDashArray" Value="4,3" />
+            <Setter Property="StrokeLineCap" Value="Round" />
+            <Setter Property="Stroke" Value="{DynamicResource ZoneGrayStroke}" />
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.12" />
+                    <BrushTransition Property="Stroke" Duration="0:0:0.12" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Rectangle.zoneDash.valid">
+            <Setter Property="IsVisible" Value="True" />
+            <Setter Property="Opacity" Value="0.55" />
+        </Style>
+        <Style Selector="Rectangle.zoneDash.hover">
+            <Setter Property="IsVisible" Value="True" />
+            <Setter Property="Opacity" Value="0.95" />
+            <Setter Property="Stroke" Value="{DynamicResource ZoneAccentBorder}" />
+        </Style>
+        <!--  Danger: the Available zone under the cursor when a custom button is dragged in (drop = delete). Declared after .hover so it wins.  -->
+        <Style Selector="Rectangle.zoneDash.danger">
+            <Setter Property="IsVisible" Value="True" />
+            <Setter Property="Opacity" Value="0.95" />
+            <Setter Property="Stroke" Value="{DynamicResource IG_TextDangerBrush}" />
+        </Style>
+
+        <!--  The insertion marker shown between chips while dragging (stays inside the editor)  -->
+        <Style Selector="Border.dropMarker">
+            <Setter Property="Width" Value="3" />
+            <Setter Property="CornerRadius" Value="1.5" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="Background" Value="{DynamicResource ZoneAccentBorder}" />
+        </Style>
+
+        <!--
+            Note: the floating ghost + the "Delete" chip (shown when a custom button is dragged over
+            the Available zone) are styled inline in code because they are hosted on the window
+            OverlayLayer (outside this control's style scope).
+        -->
+    </ui:PhControl.Styles>
+
+
+    <!--
+        content + topmost drag overlay. A single left-anchored, max-width column fills from the left
+        up to the max and shrinks with a small window, so it's never centered on a wide monitor
+        (which a Stretch element with MaxWidth would be) and never clipped on a narrow one.
+    -->
+    <Grid HorizontalAlignment="Stretch">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" MaxWidth="1500" />
+        </Grid.ColumnDefinitions>
+
+        <StackPanel Orientation="Vertical" Spacing="10">
+
+            <!--  Actions  -->
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <ui:PhButton x:Name="PART_AddCustomBtn" Variant="Default" />
+                <ui:PhButton x:Name="PART_ResetBtn" Variant="Link" />
+            </StackPanel>
+
+            <ui:PhTextBlock
+                MaxWidth="{StaticResource TextContentMaxWidth}"
+                HorizontalAlignment="Left"
+                LangKey="Settings_Toolbar_ArrangeHint"
+                Opacity="0.7"
+                TextWrapping="Wrap" />
+
+
+            <!--  Current buttons: primary | secondary side by side, equal height  -->
+            <StackPanel Spacing="6">
+                <ui:PhTextBlock FontWeight="SemiBold" LangKey="Settings_Toolbar_CurrentButtons" />
+
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="3.5*" />
+                        <ColumnDefinition
+                            Width="1.5*"
+                            MinWidth="100"
+                            MaxWidth="300" />
+                    </Grid.ColumnDefinitions>
+
+                    <Grid Grid.Column="0">
+                        <Border x:Name="PART_PrimaryZone" Classes="zone">
+                            <WrapPanel x:Name="PART_PrimaryGroup" />
+                        </Border>
+                        <Rectangle x:Name="PART_PrimaryDash" Classes="zoneDash" />
+                    </Grid>
+
+                    <Grid Grid.Column="1">
+                        <Border x:Name="PART_SecondaryZone" Classes="zone">
+                            <WrapPanel x:Name="PART_SecondaryGroup" />
+                        </Border>
+                        <Rectangle x:Name="PART_SecondaryDash" Classes="zoneDash" />
+                    </Grid>
+                </Grid>
+            </StackPanel>
+
+            <!--  Available buttons: full width, below the Current buttons  -->
+            <StackPanel Spacing="6">
+                <ui:PhTextBlock FontWeight="SemiBold" LangKey="Settings_Toolbar_AvailableButtons" />
+                <Grid>
+                    <Border x:Name="PART_AvailableZone" Classes="zone">
+                        <WrapPanel x:Name="PART_AvailableGroup" />
+                    </Border>
+                    <Rectangle x:Name="PART_AvailableDash" Classes="zoneDash" />
+                </Grid>
+            </StackPanel>
+
+        </StackPanel>
+
+        <!--  Topmost overlay that hosts the floating chip + insertion marker while dragging  -->
+        <Canvas x:Name="PART_DragLayer" IsHitTestVisible="False" />
+    </Grid>
+
+</ui:PhControl>

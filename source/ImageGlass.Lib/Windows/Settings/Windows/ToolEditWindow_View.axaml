@@ -1,0 +1,53 @@
+<ui:PhControl
+    x:Class="ImageGlass.Common.Windows.ToolEditWindowView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="using:ImageGlass.UI"
+    mc:Ignorable="d"
+    d:DesignWidth="480">
+
+    <StackPanel Orientation="Vertical" Spacing="14">
+
+        <!--  Tool ID  -->
+        <StackPanel Spacing="5">
+            <ui:PhTextBlock LangKey="_ID" />
+            <ui:PhTextBox
+                x:Name="PART_Id"
+                IsRequired="True"
+                PlaceholderText="Tool_MyTool" />
+        </StackPanel>
+
+        <!--  Tool name  -->
+        <StackPanel Spacing="5">
+            <ui:PhTextBlock LangKey="_Name" />
+            <ui:PhTextBox x:Name="PART_Name" PlaceholderText="My Tool" />
+        </StackPanel>
+
+        <!--  Integrated with ImageGlass.SDK (the SDK name is a link)  -->
+        <StackPanel Orientation="Horizontal">
+            <CheckBox x:Name="PART_Integrated">
+                <ui:PhTextBlock x:Name="PART_IntegratedBefore" TextWrapping="Wrap" />
+            </CheckBox>
+            <ui:PhButton
+                x:Name="PART_SdkLink"
+                VerticalAlignment="Center"
+                Variant="Link" />
+            <ui:PhTextBlock
+                x:Name="PART_IntegratedAfter"
+                VerticalAlignment="Center"
+                IsVisible="False" />
+        </StackPanel>
+
+        <!--  Executable, argument, hotkeys & command preview  -->
+        <ui:PhActionEditorControl
+            x:Name="PART_Action"
+            ArgumentPlaceholder="&lt;file&gt;"
+            ExecutablePlaceholder="{OnPlatform '/path/to/tool',
+                                               Windows='C:\\path\\to\\tool.exe',
+                                               macOS='/Applications/MyTool.app',
+                                               x:TypeArguments=x:String}" />
+
+    </StackPanel>
+</ui:PhControl>

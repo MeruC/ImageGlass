@@ -1,0 +1,94 @@
+<windows:SettingsPageView
+    x:Class="ImageGlass.Common.Windows.LanguageSettingsView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:loc="using:ImageGlass.Common.Localization"
+    xmlns:types="using:ImageGlass.Common.Types"
+    xmlns:ui="using:ImageGlass.UI"
+    xmlns:windows="using:ImageGlass.Common.Windows"
+    mc:Ignorable="d"
+    d:DesignWidth="600"
+    HorizontalAlignment="Stretch">
+
+    <StackPanel Orientation="Vertical">
+
+        <!--  Language  -->
+        <StackPanel Margin="{DynamicResource SettingsGroupIndent}" Spacing="14">
+
+            <!--  Display language  -->
+            <StackPanel Spacing="{DynamicResource SettingsLabelInputGap}">
+                <ui:PhTextBlock LangKey="Settings_DisplayLanguage" />
+
+                <StackPanel
+                    HorizontalAlignment="Left"
+                    Orientation="Horizontal"
+                    Spacing="8">
+                    <ComboBox
+                        x:Name="PART_LanguageList"
+                        Width="350"
+                        VerticalAlignment="Top">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="loc:Lang">
+                                <StackPanel Width="300" Spacing="2">
+                                    <!--  local name + english name  -->
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock
+                                            FontWeight="SemiBold"
+                                            Text="{CompiledBinding Metadata.LocalName}"
+                                            TextTrimming="CharacterEllipsis" />
+                                        <TextBlock
+                                            IsVisible="{CompiledBinding !IsBuiltIn}"
+                                            Opacity="0.6"
+                                            Text="{CompiledBinding Metadata.EnglishName}"
+                                            TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+
+                                    <!--  lang pack path  -->
+                                    <TextBlock
+                                        FontSize="{x:Static types:Const.FONT_SIZE_SMALL}"
+                                        IsVisible="{CompiledBinding !IsBuiltIn}"
+                                        Opacity="0.6"
+                                        Text="{CompiledBinding DisplayFilePath}"
+                                        TextTrimming="PathSegmentEllipsis"
+                                        ToolTip.Tip="{CompiledBinding DisplayFilePath}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+
+                    <ui:PhButton
+                        x:Name="PART_RefreshLanguages"
+                        VerticalAlignment="Top"
+                        HorizontalContentAlignment="Center" />
+                </StackPanel>
+            </StackPanel>
+
+
+            <!--  Contributors  -->
+            <StackPanel x:Name="PART_ContributorsSection" Spacing="{DynamicResource SettingsLabelInputGap}">
+                <ui:PhTextBlock FontWeight="SemiBold" LangKey="Settings_Contributors" />
+                <SelectableTextBlock
+                    x:Name="PART_Contributors"
+                    MaxWidth="600"
+                    HorizontalAlignment="Left"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+
+
+            <!--  Actions  -->
+            <StackPanel
+                Margin="0,14,0,0"
+                HorizontalAlignment="Left"
+                Spacing="2">
+                <ui:PhButton x:Name="PART_InstallLanguage" Variant="Link" />
+                <ui:PhButton x:Name="PART_GetMoreLanguages" Variant="Link" />
+                <ui:PhButton x:Name="PART_ExportLanguage" Variant="Link" />
+            </StackPanel>
+
+        </StackPanel>
+
+    </StackPanel>
+
+</windows:SettingsPageView>

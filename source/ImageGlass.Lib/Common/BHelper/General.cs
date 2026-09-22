@@ -30,13 +30,26 @@ public partial class BHelper
     /// <summary>
     /// Gets app name.
     /// </summary>
-    public static string AppName => "ImageGlass_10";
+    public static string AppName { get; } = "ImageGlass";
+
+    /// <summary>
+    /// Gets app display name.
+    /// </summary>
+    public static string AppDisplayName { get; } = "ImageGlass 10";
 
 
     /// <summary>
     /// Gets the app executable file path.
     /// </summary>
     public static string AppExePath => Environment.ProcessPath ?? "";
+
+
+    /// <summary>
+    /// Gets the path to relaunch the app with: the .AppImage file, never the binary inside its
+    /// mount, which is unmounted as soon as the exiting process dies.
+    /// </summary>
+    public static string AppRelaunchPath =>
+        Environment.GetEnvironmentVariable("APPIMAGE") is { Length: > 0 } appImage ? appImage : AppExePath;
 
 
     /// <summary>
@@ -189,7 +202,7 @@ public partial class BHelper
         var osArch = Environment.Is64BitOperatingSystem ? "64-bit" : "32-bit";
 
         var details = $"""
-            Version: {BHelper.AppName} v{Core.BuildInfo.AppVersion}
+            Version: {BHelper.AppDisplayName} v{Core.BuildInfo.FullVersion}
             Magick.NET: {MagickNET.Version}
             Runtime: .NET {Environment.Version}
             OS: {OS} {Environment.OSVersion.VersionString} {osArch}
@@ -215,7 +228,7 @@ public partial class BHelper
         var osArch = Environment.Is64BitOperatingSystem ? "64-bit" : "32-bit";
 
         var debugInfo = $"""
-            {BHelper.AppName} {Core.BuildInfo.AppVersion}
+            {BHelper.AppDisplayName} {Core.BuildInfo.FullVersion}
             {MagickNET.Version}
             {OS} {osArch} {Environment.OSVersion.Version}, .NET {Environment.Version}
             """;

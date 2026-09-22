@@ -16,9 +16,6 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-using System;
-using System.Collections.Generic;
-
 namespace ImageGlass.Common.Photoing;
 
 /// <summary>
@@ -45,4 +42,14 @@ public sealed class CodecSelectionContext
     /// Gets or sets a value indicating whether a non-raw embedded preview should be used instead of the full image.
     /// </summary>
     public bool LoadOtherThumbnailOnly { get; init; }
+
+    /// <summary>
+    /// Gets or sets the minimum width an embedded preview must have to be used instead of the full image.
+    /// </summary>
+    public int PreviewMinWidth { get; init; }
+
+    /// <summary>
+    /// Gets or sets the minimum height an embedded preview must have to be used instead of the full image.
+    /// </summary>
+    public int PreviewMinHeight { get; init; }
 }

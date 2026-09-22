@@ -20,6 +20,7 @@ using ImageGlass.Common;
 using ImageGlass.Common.Types;
 using ImageGlass.UI.Viewer;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -56,6 +57,17 @@ public sealed class ToolRegistry : PhDisposable
     public void Register(string toolId, ITool tool)
     {
         _tools[toolId] = tool;
+    }
+
+
+    /// <summary>
+    /// Removes all registered external tools. Used when <see cref="Config.Tools"/> is re-applied
+    /// so edited tools are re-registered with their new values.
+    /// </summary>
+    public void RemoveExternalTools()
+    {
+        var ids = _tools.Where(kv => kv.Value is ExternalToolProxy).Select(kv => kv.Key).ToList();
+        foreach (var id in ids) _tools.Remove(id);
     }
 
 

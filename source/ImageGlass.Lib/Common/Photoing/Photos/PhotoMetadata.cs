@@ -17,6 +17,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 using ImageGlass.Common.Types;
+using ImageGlass.Common.ServiceProviders.FileSearchService;
 using ImageMagick;
 using SkiaSharp;
 using System;
@@ -34,17 +35,18 @@ public partial class PhotoMetadata : PhDisposable
     #region Public Properties
 
     #region File metadata
+    private string _filePath = string.Empty;
     public string FilePath
     {
-        get; set
+        get => _filePath;
+        set
         {
-            if (field == value) return;
-            var oldValue = field;
-            field = value;
+            if (_filePath == value) return;
+            _filePath = value;
 
             SetFilePath__(value);
         }
-    } = string.Empty;
+    }
 
     public string FileName { get; private set; } = string.Empty;
     /// <summary>
@@ -92,6 +94,10 @@ public partial class PhotoMetadata : PhDisposable
     /// </summary>
     public uint Height { get; set; } = 0;
 
+    // DPI
+    public double DpiX { get; set; } = 0;
+    public double DpiY { get; set; } = 0;
+
     public uint FrameCount { get; set; } = 0;
     public string FrameCountFormatted => FrameCount > 1 ? FrameCount.ToString() : string.Empty;
     public uint AnimationLoop { get; set; } = 0;
@@ -117,6 +123,12 @@ public partial class PhotoMetadata : PhDisposable
 
     /// <summary>Whether the image has a wider-than-sRGB color gamut.</summary>
     public bool IsWideGamut { get; set; } = false;
+
+    /// <summary>
+    /// Peak content luminance in nits from the container's HDR10 metadata (MaxCLL, else the
+    /// mastering display max luminance). <c>0</c> when the file declares none.
+    /// </summary>
+    public double ContentPeakNits { get; set; } = 0;
 
     /// <summary>The native bit depth per channel from the source codec.</summary>
     public int BitsPerChannel { get; set; } = 8;
@@ -156,6 +168,21 @@ public partial class PhotoMetadata : PhDisposable
 
     public IImageProfile? RawThumbnail { get; set; } = null;
 
+    /// <summary>
+    /// Size of <see cref="RawThumbnail"/>; <c>0</c> when there is none.
+    /// </summary>
+    public uint PreviewWidth { get; set; } = 0;
+
+    /// <inheritdoc cref="PreviewWidth"/>
+    public uint PreviewHeight { get; set; } = 0;
+
+    /// <summary>
+    /// Whether the embedded preview may be shown in place of the full image at this minimum size.
+    /// </summary>
+    public bool IsEmbeddedPreviewLargeEnough(int minWidth, int minHeight) =>
+        PreviewWidth > 0 && PreviewHeight > 0
+        && PreviewWidth >= minWidth && PreviewHeight >= minHeight;
+
     #endregion // Color information
 
 
@@ -194,6 +221,20 @@ public partial class PhotoMetadata : PhDisposable
     }
 
 
+    public PhotoMetadata(FileSearchEntry entry)
+    {
+        // assigned directly to skip SetFilePath__, which re-stats the file from disk
+        _filePath = entry.FilePath;
+
+        FileName = Path.GetFileName(entry.FilePath);
+        FileExtension = Path.GetExtension(entry.FilePath).ToLowerInvariant();
+        FolderPath = Path.GetDirectoryName(entry.FilePath) ?? string.Empty;
+        FolderName = Path.GetFileName(FolderPath);
+        FileSizeInBytes = entry.FileSizeInBytes;
+        FileCreationTimeUtc = entry.FileCreationTimeUtc;
+        FileLastWriteTimeUtc = entry.FileLastWriteTimeUtc;
+        FileLastAccessTimeUtc = entry.FileLastAccessTimeUtc;
+    }
 
     #region Methods
 
@@ -209,12 +250,14 @@ public partial class PhotoMetadata : PhDisposable
         MagickColorProfile = null;
 
         RawThumbnail = null;
+        PreviewWidth = PreviewHeight = 0;
         ExifProfile = null;
         FrameCount = 0;
         Frames.Clear();
 
         EmbeddedVideoOffsetFromEnd = 0;
         HdrTransferFn = HdrTransferFunction.None;
+        ContentPeakNits = 0;
     }
 
 
@@ -283,10 +326,17 @@ public partial class PhotoMetadata : PhDisposable
         MagickImage? thumbM = null;
 
 
-        // 1. try get from RAW format
-        if (RawThumbnail is not null)
+        // 1. try get from RAW format; a zero size means the metadata ping could not decode the blob
+        if (RawThumbnail is not null && PreviewWidth > 0)
         {
-            thumbM = new MagickImage(RawThumbnail.ToReadOnlySpan());
+            try
+            {
+                thumbM = new MagickImage(RawThumbnail.ToReadOnlySpan());
+            }
+            catch
+            {
+                thumbM = null;
+            }
         }
 
 
@@ -316,8 +366,9 @@ public partial class PhotoMetadata : PhDisposable
     {
         if (!IsLivePhoto || EmbeddedVideoOffsetFromEnd == 0) return;
 
-        var videoPath = await Task.Run(() => LivePhotoDetector.ExtractEmbeddedVideoAsync(FilePath, EmbeddedVideoOffsetFromEnd))
-                .ConfigureAwait(false);
+        var videoPath = await Task
+            .Run(() => LivePhotoDetector.ExtractEmbeddedVideoAsync(FilePath, EmbeddedVideoOffsetFromEnd))
+            .ConfigureAwait(false);
 
         if (string.IsNullOrEmpty(videoPath)) return;
 

@@ -16,7 +16,6 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-using Avalonia.Threading;
 using ImageGlass.Common;
 using ImageGlass.Common.Localization;
 using ImageGlass.Common.Photoing;
@@ -30,8 +29,14 @@ namespace ImageGlass.Tools;
 
 public partial class LosslessCompressionWindow : ModalWindow
 {
-    private CancellationTokenSource _cancel = new();
-    private FileInfo _srcFileInfo;
+    // the file can be briefly locked by a pending read (post-save reload, thumbnail,
+    // metadata), which makes the optimizer fail to overwrite it => retry a few times.
+    private const int MAX_ATTEMPTS = 5;
+    private const int RETRY_DELAY_MS = 300;
+
+    private readonly CancellationTokenSource _cancel = new();
+    private readonly FileInfo _srcFileInfo;
+    private bool _isRunning; // UI thread only
 
 
 
@@ -65,9 +70,9 @@ public partial class LosslessCompressionWindow : ModalWindow
     {
         base.OnIgLanguageChanged();
 
-        Title = Core.Lang[LangId.FrmMain_MnuLosslessCompression];
-        Heading = Core.Lang[LangId.FrmMain_MnuLosslessCompression_Confirm];
-        Description = Core.Lang[LangId.FrmMain_MnuLosslessCompression_Description];
+        Title = Core.Lang[LangId.Menu_MnuLosslessCompression];
+        Heading = Core.Lang[LangId.Menu_MnuLosslessCompression_Confirm];
+        Description = Core.Lang[LangId.Menu_MnuLosslessCompression_Description];
         Button1Text = Core.Lang[LangId._Yes];
         Button2Text = Core.Lang[LangId._No];
     }
@@ -75,25 +80,22 @@ public partial class LosslessCompressionWindow : ModalWindow
 
     protected override void OnDialogSubmitted(DialogEventArgs e)
     {
+        // block re-entry: pressing Enter again would start a second concurrent run,
+        // and the two runs then collide while overwriting the same file
+        if (_isRunning) return;
+        _isRunning = true;
+
         _ = RunAsync(_srcFileInfo);
     }
 
 
-    protected override void OnDialogCancelled(DialogEventArgs e)
+    protected override void OnClosed(EventArgs e)
     {
-        _cancel?.Cancel();
-        _cancel?.Dispose();
+        base.OnClosed(e);
 
-        base.OnDialogCancelled(e);
-    }
-
-
-    protected override void OnDialogAborted()
-    {
-        _cancel?.Cancel();
-        _cancel?.Dispose();
-
-        base.OnDialogAborted();
+        // signal the running job to stop updating this window, whatever closed it
+        _cancel.Cancel();
+        _cancel.Dispose();
     }
 
     #endregion // Override Methods
@@ -108,51 +110,107 @@ public partial class LosslessCompressionWindow : ModalWindow
     private async Task RunAsync(FileInfo fi)
     {
         var oldFileLength = fi.Length;
+        var oldFileSizeFormatted = Core.Photos.CurrentMetadata?.FileSizeFormatted
+            ?? BHelper.FormatSize(oldFileLength);
+        var token = _cancel.Token;
 
+        // 1. switch the dialog to the 'compressing' state
         _btn1.IsEnabled = false;
+        _btn1.IsDefault = false;
         _btn2.Focus(Avalonia.Input.NavigationMethod.Tab);
 
         IsButton1Visible = false;
         IsButton2Visible = true;
         Button2Text = Core.Lang[LangId._Cancel];
+        DefaultButton = DialogButton.Button2; // Enter must not re-submit
 
         IsProgressVisible = true;
         IsProgressIndeterminate = true;
         ProgressValue = 0;
 
-        Heading = Core.Lang[LangId.FrmMain_MnuLosslessCompression_Compressing];
-        Description = Core.Lang[LangId.FrmMain_MnuLosslessCompression_Description];
+        Heading = Core.Lang[LangId.Menu_MnuLosslessCompression_Compressing];
+        Description = Core.Lang[LangId.Menu_MnuLosslessCompression_Description];
         Note = $"""
             {fi.FullName}
 
-            {Core.Photos.CurrentMetadata?.FileSizeFormatted}
+            {oldFileSizeFormatted}
             """;
 
-        _ = Task.Factory.StartNew(async () =>
+
+        // 2. compress the file
+        // never let this throw: an unobserved failure would leave the dialog stuck in the
+        // 'compressing' state and surface later as an unhandled exception (app freeze).
+        try
         {
-            // start compressing
-            MagickCodec.LosslessCompress(fi.FullName);
+            await CompressAsync(fi.FullName, token);
             await Task.Delay(200); // make it feel slow for better UX
+            if (token.IsCancellationRequested) return;
 
-            // done, show stats
-            Dispatcher.UIThread.Post(() =>
+            // 3.1. done, show stats
+            var newFi = new FileInfo(fi.FullName);
+            var percent = Math.Round((1 - (newFi.Length * 1f / oldFileLength)) * 100f, 2);
+
+            Heading = Core.Lang[LangId.Menu_MnuLosslessCompression_Done];
+            Note = $"""
+                {newFi.FullName}
+
+                {oldFileSizeFormatted} ⇒ {BHelper.FormatSize(newFi.Length)} (↓ {percent}%)
+                """;
+        }
+        catch (Exception ex)
+        {
+            if (token.IsCancellationRequested) return;
+
+            // 3.2. failed, show the reason
+            Heading = Core.Lang[LangId.Menu_MnuLosslessCompression_Error];
+            NoteStyle = InfoBarSeverity.Danger;
+            Note = $"""
+                {fi.FullName}
+
+                {ex.Message}
+                """;
+            Details = BHelper.GetExceptionDetails(ex);
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested)
             {
-                var newFi = new FileInfo(fi.FullName);
-                var percent = Math.Round((1 - (newFi.Length * 1f / oldFileLength)) * 100f, 2);
-
-                Button2Text = Core.Lang[LangId._Close];
-                Heading = Core.Lang[LangId.FrmMain_MnuLosslessCompression_Done];
-                Note = $"""
-                    {newFi.FullName}
-
-                    {Core.Photos.CurrentMetadata?.FileSizeFormatted} ⇒ {BHelper.FormatSize(newFi.Length)} (↓ {percent}%)
-                    """;
-
+                // always leave the dialog closable
                 ProgressValue = 100;
                 IsProgressIndeterminate = false;
                 IsProgressVisible = false;
-            });
-        }, _cancel.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
+
+                Button2Text = Core.Lang[LangId._Close];
+                SetDefaultButton(DialogButton.Button2);
+                _btn2.Focus(Avalonia.Input.NavigationMethod.Tab);
+            }
+        }
+    }
+
+
+    /// <summary>
+    /// Compresses the file on a background thread, retrying while the file is still
+    /// locked by another reader.
+    /// </summary>
+    private static async Task<bool> CompressAsync(string filePath, CancellationToken token)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            token.ThrowIfCancellationRequested();
+
+            try
+            {
+                // run on a dedicated thread: compression is CPU-bound and can take seconds
+                return await Task.Factory.StartNew(() => MagickCodec.LosslessCompress(filePath),
+                    CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default)
+                    .ConfigureAwait(false);
+            }
+            catch (IOException) when (attempt < MAX_ATTEMPTS)
+            {
+                // the file is in use, back off and retry
+                await Task.Delay(RETRY_DELAY_MS * attempt).ConfigureAwait(false);
+            }
+        }
     }
 
     #endregion // Private Methods

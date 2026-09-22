@@ -16,10 +16,7 @@
         <!--  GalleryControl: Control template  -->
         <ItemsControl.Template>
             <ControlTemplate>
-                <ScrollViewer
-                    HorizontalScrollBarVisibility="Auto"
-                    PointerWheelChanged="PART_ScrollViewer_PointerWheelChanged"
-                    VerticalScrollBarVisibility="Auto">
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
                     <Border Padding="{x:Static ui:GalleryControl.GalleryPadding}">
                         <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}" />
                     </Border>
@@ -61,11 +58,10 @@
                                 Margin="0,0,0,4"
                                 ColumnDefinitions="*, Auto"
                                 ColumnSpacing="4"
-                                TextElement.FontSize="14"
                                 TextElement.FontWeight="Bold">
                                 <TextBlock
                                     Grid.Column="0"
-                                    Foreground="{DynamicResource SystemAccentColor}"
+                                    Foreground="{DynamicResource IG_TextAccentColor}"
                                     Text="{CompiledBinding Metadata.FileName}"
                                     TextWrapping="Wrap" />
 

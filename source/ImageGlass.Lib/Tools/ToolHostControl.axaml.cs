@@ -82,6 +82,18 @@ public partial class ToolHostControl : PhControl
         AvaloniaProperty.Register<ToolHostControl, bool>(nameof(HasSettings));
 
 
+    /// <summary>
+    /// Gets the value indicates if the hosted tool is a Pro feature shown as a read-only preview.
+    /// </summary>
+    public bool IsProPreview
+    {
+        get => GetValue(IsProPreviewProperty);
+        private set => SetValue(IsProPreviewProperty, value);
+    }
+    public static readonly StyledProperty<bool> IsProPreviewProperty =
+        AvaloniaProperty.Register<ToolHostControl, bool>(nameof(IsProPreview));
+
+
     #endregion // Public Properties
 
 
@@ -96,12 +108,13 @@ public partial class ToolHostControl : PhControl
 
     #region Control Events
 
+
     protected override void OnIgLanguageChanged()
     {
         base.OnIgLanguageChanged();
 
         CloseButtonTooltipText = Core.Lang[LangId._Close];
-        SettingsButtonTooltipText = Core.Lang[LangId.FrmMain_MnuSettings];
+        SettingsButtonTooltipText = Core.Lang[LangId.Menu_MnuSettings];
     }
 
 
@@ -145,6 +158,7 @@ public partial class ToolHostControl : PhControl
         }
 
         HasSettings = newTool.HasSettingsUI;
+        IsProPreview = newTool.IsProPreview;
 
         // open the tool
         Tool = newTool;

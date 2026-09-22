@@ -30,13 +30,11 @@ public partial class PhotoManager
     private readonly Lock _cacheLock = new();
 
     /// <summary>
-    /// Tracks indexes of photos that were loaded by the caching logic.
-    /// The current photo index is NOT included here.
+    /// Indexes of photos the caching logic decoded; the current photo is NOT among them.
     /// </summary>
     private readonly HashSet<int> _cachedIndexes = [];
 
 
-    // Debug properties
     #region Debug properties
 
     /// <summary>
@@ -77,8 +75,7 @@ public partial class PhotoManager
 
 
     /// <summary>
-    /// Requests background caching around the given center index.
-    /// Cancels any previously running cache pass before starting a new one.
+    /// Starts a background cache pass around the given center index, cancelling any pass already running.
     /// </summary>
     public void RequestCacheAround(int centerIndex)
     {
@@ -94,13 +91,17 @@ public partial class PhotoManager
             token = _cacheCts.Token;
         }
 
-        if (Core.Config.CacheMaxMemoryInMb == 0
+        // a slideshow preloads its next image even when general caching is off (budget = 0)
+        var isSlideshow = Core.Slideshow?.IsRunning == true;
+
+        if (!isSlideshow
+            && (Core.Config.CacheMaxMemoryInMb == 0
             || Core.Config.CacheMaxFileSizeInMb == 0
-            || Core.Config.CacheMaxDimension == 0) return;
+            || Core.Config.CacheMaxDimension == 0)) return;
 
         // run on a dedicated thread to avoid thread pool starvation
         _ = Task.Factory.StartNew(
-            () => RunCacheAroundAsync(centerIndex, token),
+            () => RunCacheAroundAsync(centerIndex, isSlideshow, token),
             token,
             TaskCreationOptions.LongRunning,
             TaskScheduler.Default);
@@ -122,22 +123,63 @@ public partial class PhotoManager
 
 
     /// <summary>
-    /// Unloads all cached photos (not the current photo) and resets tracking.
+    /// Unloads every decoded photo and resets tracking.
     /// </summary>
-    public void ClearCache()
+    /// <param name="excludePhoto">A photo to leave decoded, e.g. one carried over into a rebuilt list.</param>
+    public void ClearCache(Photo? excludePhoto = null)
     {
         CancelCaching();
 
-        int[] snapshot;
         lock (_cacheLock)
         {
-            snapshot = [.. _cachedIndexes];
             _cachedIndexes.Clear();
         }
 
-        foreach (var idx in snapshot)
+        UnloadPhotosOutside([], excludePhoto);
+    }
+
+
+    /// <summary>
+    /// Unloads every decoded photo whose index is not in <paramref name="keepIndexes"/>.
+    /// </summary>
+    /// <param name="keepIndexes">Indexes that must stay decoded.</param>
+    /// <param name="excludePhoto">An extra photo to leave decoded, matched by reference.</param>
+    /// <param name="keepCurrent">
+    /// Re-reads <see cref="CurrentIndex"/> per item, so navigating mid-sweep cannot unload the viewer's photo.
+    /// </param>
+    /// <remarks>
+    /// Walks the whole list: a pass cancelled mid-load leaves photos decoded but untracked, and nothing else frees them.
+    /// </remarks>
+    private void UnloadPhotosOutside(HashSet<int> keepIndexes, Photo? excludePhoto, bool keepCurrent = false)
+    {
+        Photo[] snapshot;
+        lock (_lock)
         {
-            Get(idx)?.Unload();
+            snapshot = [.. Items];
+        }
+
+        for (var i = 0; i < snapshot.Length; i++)
+        {
+            if (keepIndexes.Contains(i)) continue;
+            if (keepCurrent && i == CurrentIndex) continue;
+
+            var photo = snapshot[i];
+            if (photo.State != PhotoState.Loaded) continue;
+            if (ReferenceEquals(photo, excludePhoto)) continue;
+
+            photo.Unload();
+        }
+    }
+
+
+    /// <summary>
+    /// Marks a photo as cache-owned as soon as it is decoded.
+    /// </summary>
+    private void TrackCached(int index)
+    {
+        lock (_cacheLock)
+        {
+            _cachedIndexes.Add(index);
         }
     }
 
@@ -167,10 +209,9 @@ public partial class PhotoManager
 
 
     /// <summary>
-    /// Core caching loop. Loads photos in center-right-left expanding pattern
-    /// until the memory budget is exhausted or all reachable photos are cached.
+    /// Core caching loop: expands outward from the center until the memory budget is spent or the list runs out.
     /// </summary>
-    private async Task RunCacheAroundAsync(int centerIndex, CancellationToken token)
+    private async Task RunCacheAroundAsync(int centerIndex, bool isSlideshow, CancellationToken token)
     {
         try
         {
@@ -181,85 +222,104 @@ public partial class PhotoManager
 
             if (totalCount == 0 || centerIndex < 0) return;
 
-            // determine how far we can reach (at most half the list on each side)
+            // half the list per side is the whole list: past that the spiral wraps onto itself
             var maxRange = Math.Min(totalCount / 2 + 1, totalCount);
 
-            // generate ordered indexes in spiral pattern:
-            // right-1, left-1, right-2, left-2, ...
-            var indexes = GenerateSpiralIndexes(centerIndex, maxRange, totalCount);
+            // a slideshow only advances forward, so it looks ahead instead of spiralling
+            var canLoop = !isSlideshow || Core.Config.EnableLoopSlideshow;
+            var indexes = GenerateSpiralIndexes(centerIndex, maxRange, totalCount,
+                primaryDirection: isSlideshow ? 1 : 0, canLoop);
 
-            // estimate current memory usage from already-cached photos
-            var usedMemory = EstimateCachedMemory(centerIndex);
+            // the next slideshow image ignores the budget and the caps, to keep transitions seamless
+            var guaranteedIndex = isSlideshow ? GetForwardIndex(centerIndex, totalCount, canLoop) : -1;
 
-            // collect the set of indexes that should remain cached after this pass
+            // the spiral re-visits and re-counts every decoded photo, so seeding from the tracked set double-counts
+            var currentPhoto = Get(centerIndex);
+            var usedMemory = currentPhoto is null ? 0L : EstimatePhotoMemory(currentPhoto);
+
             var newCachedSet = new HashSet<int>();
 
             foreach (var idx in indexes)
             {
                 if (token.IsCancellationRequested) return;
 
-                // re-check quick browsing each iteration
+                // the user can start holding a navigation key mid-pass
                 if (Core.API.IsQuickBrowsing) return;
 
                 var photo = Get(idx);
                 if (photo is null) continue;
 
-                // already loaded (either by a previous cache pass or by the viewer)
+                var isGuaranteed = idx == guaranteedIndex;
+
+                // already decoded, by an earlier pass or by the viewer
                 if (photo.State == PhotoState.Loaded)
                 {
                     var photoMem = EstimatePhotoMemory(photo);
-                    if (usedMemory + photoMem > maxMemoryBytes) break;
+                    if (!isGuaranteed && usedMemory + photoMem > maxMemoryBytes) break;
 
                     usedMemory += photoMem;
                     newCachedSet.Add(idx);
                     continue;
                 }
 
-                // skip the photo currently being loaded by the viewer
-                // to avoid cancelling its ongoing load via CancelLoading()
+                // loading the viewer's own photo would cancel its in-flight load
                 if (idx == CurrentIndex)
                 {
                     newCachedSet.Add(idx);
                     continue;
                 }
 
-                // check file size constraint
-                if (maxFileSizeBytes > 0 && !SatisfiesFileSizeLimit(photo.FilePath, maxFileSizeBytes))
-                {
-                    continue;
-                }
+                // decode under the same policy the viewer uses, or a cache hit later serves it wrong
+                photo.ReadOptions = PhotoReadOptions.FromConfig();
 
-                // check dimension constraint (requires metadata)
-                if (maxDimension > 0)
+                if (!isSlideshow)
                 {
-                    await photo.LoadMetadataAsync(useCache: true);
-                    if (token.IsCancellationRequested) return;
-
-                    if (photo.Metadata.Width > maxDimension || photo.Metadata.Height > maxDimension)
+                    if (maxFileSizeBytes > 0 && !SatisfiesFileSizeLimit(photo.FilePath, maxFileSizeBytes))
                     {
                         continue;
                     }
+
+                    // the dimension cap needs real metadata, hence the load
+                    if (maxDimension > 0)
+                    {
+                        await photo.LoadMetadataAsync(useCache: true, token: token);
+                        if (token.IsCancellationRequested) return;
+
+                        // cap what the decode will produce, not the sensor it came from
+                        var (decodeW, decodeH) = photo.EstimatedDecodeSize;
+                        if (decodeW > maxDimension || decodeH > maxDimension)
+                        {
+                            continue;
+                        }
+                    }
+                }
+                else
+                {
+                    // the caps do not apply to a look-ahead, but the estimate below still needs metadata
+                    await photo.LoadMetadataAsync(useCache: true, token: token);
+                    if (token.IsCancellationRequested) return;
                 }
 
-                // estimate memory before loading
+                // only the guaranteed image may exceed the budget; anything else ends the pass
                 var estimatedMem = EstimatePhotoMemoryFromMetadata(photo);
-                if (usedMemory + estimatedMem > maxMemoryBytes) break;
+                if (!isGuaranteed && usedMemory + estimatedMem > maxMemoryBytes) break;
 
-                // load the photo
                 await photo.LoadAsync(useCache: true, skipLoadingEvent: true);
+
+                // track before the cancel check: an untracked decoded photo escapes eviction forever
+                TrackCached(idx);
                 if (token.IsCancellationRequested) return;
 
-                usedMemory += estimatedMem;
+                // charge the real depth: the 8 bytes/px estimate lets an RgbaF32 decode overshoot the budget
+                var decodedMem = EstimatePhotoMemory(photo);
+                usedMemory += decodedMem > 0 ? decodedMem : estimatedMem;
                 newCachedSet.Add(idx);
             }
 
             if (token.IsCancellationRequested) return;
 
-            // unload photos that were cached in a previous pass but are no longer needed
-            int[] toUnload;
             lock (_cacheLock)
             {
-                toUnload = [.. _cachedIndexes];
                 _cachedIndexes.Clear();
                 foreach (var idx in newCachedSet)
                 {
@@ -267,14 +327,9 @@ public partial class PhotoManager
                 }
             }
 
-            foreach (var idx in toUnload)
-            {
-                if (token.IsCancellationRequested) return;
-                if (newCachedSet.Contains(idx)) continue;
-                if (idx == centerIndex) continue;
-
-                Get(idx)?.Unload();
-            }
+            // evict whatever the budget did not keep, whichever codec decoded it; the viewer owns center/current
+            var keepIndexes = new HashSet<int>(newCachedSet) { centerIndex, CurrentIndex };
+            UnloadPhotosOutside(keepIndexes, null, keepCurrent: true);
         }
         catch (OperationCanceledException) { /* expected on navigation */ }
         catch (Exception ex)
@@ -285,33 +340,77 @@ public partial class PhotoManager
 
 
     /// <summary>
-    /// Generates an ordered list of indexes in the spiral pattern:
-    /// right-1, left-1, right-2, left-2, ...
+    /// Generates an ordered list of indexes around <paramref name="centerIndex"/>.
+    /// <para>
+    /// <paramref name="primaryDirection"/> controls the ordering:
+    /// <c>0</c> = balanced spiral (right-1, left-1, right-2, left-2, ...),
+    /// <c>+1</c> = forward-first (right-1, right-2, ..., then left-1, left-2, ...),
+    /// <c>-1</c> = backward-first. When <paramref name="canLoop"/> is <c>false</c>,
+    /// offsets that fall outside the list are skipped instead of wrapping around.
+    /// </para>
     /// This preserves insertion order, unlike <see cref="BHelper.GenerateWrappedIndexes"/>
     /// which uses an unordered HashSet.
     /// </summary>
-    private static List<int> GenerateSpiralIndexes(int centerIndex, int maxRange, int totalCount)
+    private static List<int> GenerateSpiralIndexes(int centerIndex, int maxRange, int totalCount,
+        int primaryDirection = 0, bool canLoop = true)
     {
         var result = new List<int>(maxRange * 2);
         var seen = new HashSet<int>();
 
-        for (var i = 1; i <= maxRange; i++)
+        // resolve a raw offset into a valid index, honoring wrap-around
+        void TryAdd(int rawIndex)
         {
-            var rightIndex = BHelper.ComputeIndexInRange(centerIndex + i, (uint)totalCount, true);
-            var leftIndex = BHelper.ComputeIndexInRange(centerIndex - i, (uint)totalCount, true);
-
-            // right first, then left — order is preserved by List
-            if (rightIndex != centerIndex && seen.Add(rightIndex))
+            int idx;
+            if (canLoop)
             {
-                result.Add(rightIndex);
+                idx = BHelper.ComputeIndexInRange(rawIndex, (uint)totalCount, true);
             }
-            if (leftIndex != centerIndex && seen.Add(leftIndex))
+            else
             {
-                result.Add(leftIndex);
+                if (rawIndex < 0 || rawIndex >= totalCount) return;
+                idx = rawIndex;
+            }
+
+            if (idx != centerIndex && seen.Add(idx))
+            {
+                result.Add(idx);
+            }
+        }
+
+        if (primaryDirection > 0)
+        {
+            // forward-first (slideshow): all forward, then all backward
+            for (var i = 1; i <= maxRange; i++) TryAdd(centerIndex + i);
+            for (var i = 1; i <= maxRange; i++) TryAdd(centerIndex - i);
+        }
+        else if (primaryDirection < 0)
+        {
+            // backward-first: all backward, then all forward
+            for (var i = 1; i <= maxRange; i++) TryAdd(centerIndex - i);
+            for (var i = 1; i <= maxRange; i++) TryAdd(centerIndex + i);
+        }
+        else
+        {
+            // balanced spiral: right-1, left-1, right-2, left-2, ...
+            for (var i = 1; i <= maxRange; i++)
+            {
+                TryAdd(centerIndex + i);
+                TryAdd(centerIndex - i);
             }
         }
 
         return result;
+    }
+
+
+    /// <summary>
+    /// Index of the next image forward, or <c>-1</c> at the end of a non-looping list.
+    /// </summary>
+    private static int GetForwardIndex(int centerIndex, int totalCount, bool canLoop)
+    {
+        var raw = centerIndex + 1;
+        if (canLoop) return BHelper.ComputeIndexInRange(raw, (uint)totalCount, true);
+        return raw < totalCount ? raw : -1;
     }
 
 
@@ -333,14 +432,13 @@ public partial class PhotoManager
 
 
     /// <summary>
-    /// Estimates the memory footprint of a loaded photo (4 bytes per pixel for BGRA32).
-    /// Returns 0 if the photo is not loaded.
+    /// Real memory footprint of a loaded photo from its decoded pixel depth; <c>0</c> when not loaded.
     /// </summary>
     private static long EstimatePhotoMemory(Photo photo)
     {
         if (photo.State != PhotoState.Loaded) return 0;
 
-        return (long)photo.Width * photo.Height * 4;
+        return (long)photo.Width * photo.Height * photo.BytesPerPixel;
     }
 
 
@@ -349,11 +447,13 @@ public partial class PhotoManager
     /// </summary>
     private static long EstimatePhotoMemoryFromMetadata(Photo photo)
     {
-        var w = photo.Metadata.Width;
-        var h = photo.Metadata.Height;
+        var (w, h) = photo.EstimatedDecodeSize;
         if (w == 0 || h == 0) return 8L * 1024 * 1024; // fallback estimate: 8 MB
 
-        return (long)w * h * 4;
+        // an embedded preview is 8-bit whatever the sensor depth
+        var isDeep = !photo.WillDecodeEmbeddedPreview && photo.Metadata.BitsPerChannel > 8;
+
+        return (long)w * h * (isDeep ? 8 : 4);
     }
 
 
@@ -364,7 +464,6 @@ public partial class PhotoManager
     {
         long total = 0;
 
-        // include the current photo
         var current = Get(centerIndex);
         if (current is not null)
         {

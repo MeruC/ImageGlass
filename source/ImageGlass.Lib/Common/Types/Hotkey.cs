@@ -18,6 +18,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 using Avalonia.Input;
 using ImageGlass.Common.Types.JsonTypeConverters;
+using System;
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace ImageGlass.Common.Types;
@@ -50,7 +52,15 @@ public class Hotkey
     public bool Shift => Modifiers.HasFlag(KeyModifiers.Shift);
     public bool Alt => Modifiers.HasFlag(KeyModifiers.Alt);
 
+    /// <summary>
+    /// Gets the hotkey text formatted for the current platform, for display only.
+    /// </summary>
     public string KeyString => ToString(this);
+
+    /// <summary>
+    /// Gets the platform-independent hotkey text used to persist the hotkey.
+    /// </summary>
+    public string InvariantKeyString => ToInvariantString(this);
 
 
 
@@ -82,6 +92,103 @@ public class Hotkey
         Key = e.Key;
         Modifiers = e.KeyModifiers;
     }
+
+
+    #region Key name tables
+
+    // key names written by ToInvariantString(); any key missing here uses its enum name.
+    // The numpad operators are deliberately absent, their symbols collide with the OEM keys.
+    private static readonly Dictionary<Key, string> _invariantKeyNames = new()
+    {
+        [Key.D0] = "0",
+        [Key.D1] = "1",
+        [Key.D2] = "2",
+        [Key.D3] = "3",
+        [Key.D4] = "4",
+        [Key.D5] = "5",
+        [Key.D6] = "6",
+        [Key.D7] = "7",
+        [Key.D8] = "8",
+        [Key.D9] = "9",
+        [Key.Back] = "Backspace",
+        [Key.OemPlus] = "+",
+        [Key.OemMinus] = "-",
+        [Key.OemComma] = ",",
+        [Key.OemPeriod] = ".",
+        [Key.OemQuestion] = "/",
+        [Key.OemSemicolon] = ";",
+        [Key.OemQuotes] = "'",
+        [Key.OemOpenBrackets] = "[",
+        [Key.OemCloseBrackets] = "]",
+        [Key.OemPipe] = "|",
+        [Key.OemBackslash] = "\\",
+        [Key.OemTilde] = "`",
+    };
+
+    // every spelling ParseFrom() accepts on top of the enum names: the invariant names above,
+    // the platform display names (incl. the macOS keycaps), and hand-written aliases
+    private static readonly Dictionary<string, Key> _keyAliases = BuildKeyAliases();
+
+    private static readonly Dictionary<string, KeyModifiers> _modifierAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Ctrl"] = KeyModifiers.Control,
+        ["Control"] = KeyModifiers.Control,
+        ["⌃"] = KeyModifiers.Control,
+        ["Shift"] = KeyModifiers.Shift,
+        ["⇧"] = KeyModifiers.Shift,
+        ["Alt"] = KeyModifiers.Alt,
+        ["Option"] = KeyModifiers.Alt,
+        ["⌥"] = KeyModifiers.Alt,
+        ["Cmd"] = KeyModifiers.Meta,
+        ["Command"] = KeyModifiers.Meta,
+        ["Meta"] = KeyModifiers.Meta,
+        ["Win"] = KeyModifiers.Meta,
+        ["Super"] = KeyModifiers.Meta,
+        ["⌘"] = KeyModifiers.Meta,
+    };
+
+
+    private static Dictionary<string, Key> BuildKeyAliases()
+    {
+        var aliases = new Dictionary<string, Key>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["\""] = Key.OemQuotes,
+            ["*"] = Key.Multiply,
+            ["Esc"] = Key.Escape,
+            ["Del"] = Key.Delete,
+            ["Ins"] = Key.Insert,
+            ["PgUp"] = Key.PageUp,
+            ["PgDn"] = Key.PageDown,
+            ["Up Arrow"] = Key.Up,
+            ["Down Arrow"] = Key.Down,
+            ["Left Arrow"] = Key.Left,
+            ["Right Arrow"] = Key.Right,
+
+            // macOS keycaps, which its display text uses and its older configs stored
+            ["←"] = Key.Left,
+            ["↑"] = Key.Up,
+            ["→"] = Key.Right,
+            ["↓"] = Key.Down,
+            ["↖"] = Key.Home,
+            ["↘"] = Key.End,
+            ["↩"] = Key.Return,
+            ["⇞"] = Key.PageUp,
+            ["⇟"] = Key.PageDown,
+            ["⇥"] = Key.Tab,
+            ["⌫"] = Key.Back,
+            ["⎋"] = Key.Escape,
+            ["␣"] = Key.Space,
+        };
+
+        foreach (var (key, name) in _invariantKeyNames)
+        {
+            aliases[name] = key;
+        }
+
+        return aliases;
+    }
+
+    #endregion // Key name tables
 
 
     #region Methods
@@ -127,26 +234,86 @@ public class Hotkey
 
 
     /// <summary>
-    /// Parses string to <see cref="Hotkey"/> instance.
+    /// Parses a hotkey text such as <c>Ctrl+Shift+1</c>, accepting both the invariant and the
+    /// platform display names. Returns <c>null</c> for a text that is not a usable hotkey.
     /// </summary>
     public static Hotkey? ParseFrom(string? s)
     {
         if (string.IsNullOrWhiteSpace(s)) return null;
 
-        var kg = KeyGesture.Parse(s);
-        if (kg is null) return null;
+        var modifiers = KeyModifiers.None;
+        var key = Key.None;
+        var partStart = 0;
 
-        return new Hotkey(kg);
+        // '+' separates the parts, except where it is the part itself (e.g. "Ctrl++")
+        for (var i = 0; i <= s.Length; i++)
+        {
+            var isLastPart = i == s.Length;
+            if (!isLastPart && (s[i] != '+' || i == partStart)) continue;
+
+            var part = s[partStart..i].Trim();
+            partStart = i + 1;
+
+            // the trailing part is the key, everything before it is a modifier
+            if (isLastPart)
+            {
+                if (!TryParseKey(part, out key)) return null;
+            }
+            else
+            {
+                if (!_modifierAliases.TryGetValue(part, out var modifier)) return null;
+                modifiers |= modifier;
+            }
+        }
+
+        return new Hotkey(modifiers, key);
     }
 
 
     /// <summary>
-    /// Parse <see cref="Hotkey"/> to string.
+    /// Parse <see cref="Hotkey"/> to the platform display string.
     /// </summary>
     public static string ToString(Hotkey hotkey)
     {
         var kg = new KeyGesture(hotkey.Key, hotkey.Modifiers);
         return kg.ToString("p", null);
+    }
+
+
+    /// <summary>
+    /// Parse <see cref="Hotkey"/> to the platform-independent string used to persist it;
+    /// <see cref="ParseFrom(string?)"/> reads back exactly what this writes.
+    /// </summary>
+    public static string ToInvariantString(Hotkey hotkey)
+    {
+        var parts = new List<string>(5);
+        if (hotkey.Modifiers.HasFlag(KeyModifiers.Control)) parts.Add("Ctrl");
+        if (hotkey.Modifiers.HasFlag(KeyModifiers.Shift)) parts.Add("Shift");
+        if (hotkey.Modifiers.HasFlag(KeyModifiers.Alt)) parts.Add("Alt");
+        if (hotkey.Modifiers.HasFlag(KeyModifiers.Meta)) parts.Add("Cmd");
+
+        parts.Add(_invariantKeyNames.GetValueOrDefault(hotkey.Key) ?? hotkey.Key.ToString());
+
+        return string.Join('+', parts);
+    }
+
+
+    /// <summary>
+    /// Resolves a single key name; an unknown name, or one that resolves to
+    /// <see cref="Key.None"/>, is rejected.
+    /// </summary>
+    private static bool TryParseKey(string name, out Key key)
+    {
+        key = Key.None;
+        if (string.IsNullOrEmpty(name)) return false;
+
+        if (_keyAliases.TryGetValue(name, out key)) return true;
+
+        // Enum.TryParse() also reads the numeric value, which would silently turn a typed digit
+        // ("1") into an unrelated key (Key.Cancel), so only names get through
+        if (!char.IsAsciiLetter(name[0])) return false;
+
+        return Enum.TryParse(name, true, out key) && key != Key.None;
     }
 
 

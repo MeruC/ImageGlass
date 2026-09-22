@@ -1,4 +1,4 @@
-﻿/*
+/*
 ImageGlass - A Fast, Seamless Photo Viewer
 Copyright (C) 2010 - 2026 DUONG DIEU PHAP
 Project homepage: https://imageglass.org
@@ -16,7 +16,9 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+using Avalonia.Threading;
 using ImageGlass.Common;
+using ImageGlass.Common.Localization;
 using ImageGlass.UI.Windowing;
 using System;
 using System.Collections.Generic;
@@ -54,52 +56,76 @@ public static class Win32ShareApi
 
     private static async void DataTransferManager_DataRequested(DataTransferManager sender, DataRequestedEventArgs e)
     {
-        if (_filePaths.Count == 0) return;
-        var deferral = e.Request.GetDeferral();
+        Exception? error = null;
 
-        // create datapackage
-        var dp = e.Request.Data;
-
-        // create List to hold all files to share
-        var filesToShare = new List<IStorageItem>();
-
-
-        // Set properties of shareUI
-        dp.Properties.Title = BHelper.AppName;
-
+        // async void on a WinRT callback thread: an escaping exception kills the process silently
         try
         {
-            if (_filePaths.Count == 1)
+            if (_filePaths.Count == 0) return;
+            var deferral = e.Request.GetDeferral();
+
+            // create datapackage
+            var dp = e.Request.Data;
+
+            try
             {
-                // only 1 photo is being shared
-                dp.Properties.Description = _filePaths[0];
-            }
-            else
-            {
+                // Set properties of shareUI
+                dp.Properties.Title = BHelper.AppDisplayName;
                 dp.Properties.Description = string.Join("\r\n", _filePaths);
-            }
 
-            for (var i = 0; i < _filePaths.Count; i++)
+                // create List to hold all files to share
+                var filesToShare = new List<IStorageItem>();
+
+                for (var i = 0; i < _filePaths.Count; i++)
+                {
+                    var imageFile = await StorageFile.GetFileFromPathAsync(_filePaths[i]);
+                    filesToShare.Add(imageFile);
+                }
+
+                dp.SetStorageItems(filesToShare);
+            }
+            catch (Exception ex)
             {
-                var imageFile = await StorageFile.GetFileFromPathAsync(_filePaths[i]);
-                filesToShare.Add(imageFile);
-            }
+                error = ex;
 
-            dp.SetStorageItems(filesToShare);
+                // replaces the generic "Try that again" text with the real reason
+                e.Request.FailWithDisplayText(ex.Message);
+            }
+            finally
+            {
+                // release the Share UI before any dialog, or it waits on us and times out
+                deferral.Complete();
+            }
         }
         catch (Exception ex)
         {
-            await ModalWindow.ShowErrorAsync(null, new ModalWindowOptions
+            error ??= ex;
+        }
+
+        if (error is not null) ShowShareError(error);
+    }
+
+
+    /// <summary>
+    /// Shows the share failure, marshalled to the UI thread since the data request may not run on it.
+    /// </summary>
+    private static void ShowShareError(Exception ex)
+    {
+        // the caller is an async void, so the reporter itself must not throw
+        try
+        {
+            Dispatcher.UIThread.Post(() =>
             {
-                Title = Core.Lang[ImageGlass.Common.Localization.LangId.FrmMain_MnuShare],
-                Heading = ex.Message,
-                Details = ex.ToString(),
+                _ = ModalWindow.ShowErrorAsync(null, new ModalWindowOptions
+                {
+                    Title = Core.Lang[LangId.Menu_MnuShare],
+                    Heading = Core.Lang[LangId.Menu_MnuShare_Error],
+                    Description = ex.Message,
+                    Details = BHelper.GetExceptionDetails(ex),
+                });
             });
         }
-        finally
-        {
-            deferral.Complete();
-        }
+        catch { }
     }
 
 }

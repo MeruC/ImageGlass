@@ -27,9 +27,20 @@ DisplayConfigGetDeviceInfo
 
 DwmSetWindowAttribute
 
+SendMessage
+WM_SETICON
+WM_GETICON
+WM_NCACTIVATE
+GetForegroundWindow
+CreateIconIndirect
+CreateBitmap
+
 
 SystemParametersInfo
 SYSTEM_PARAMETERS_INFO_ACTION
+
+
+ImmAssociateContext
 
 
 ShellExecuteEx
@@ -37,3 +48,9 @@ SHELLEXECUTEINFOW
 
 SHChangeNotify
 
+GetNamedPipeClientProcessId
+
+GetCurrentPackageFullName
+
+
+SetThreadExecutionState

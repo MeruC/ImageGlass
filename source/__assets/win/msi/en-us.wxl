@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Strings for the two hand-authored dialogs. WixUIBack/Next/Cancel/Browse come from the UI extension. -->
+<WixLocalization Culture="en-US" Codepage="1252" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+
+  <String Id="IgFeatureMainTitle"      Value="ImageGlass" />
+  <String Id="IgShortcutName"          Value="ImageGlass" />
+  <String Id="IgShortcutDescription"   Value="A Fast, Seamless Photo Viewer" />
+  <String Id="IgNewerVersionInstalled" Value="A newer version of ImageGlass is already installed. Setup will now exit." />
+
+  <String Id="IgDlgTitle"              Value="[ProductName] Setup" />
+  <String Id="IgBannerBitmap"          Value="WixUI_Bmp_Banner" />
+  <!-- Binary-table icon shipped by the WixUI extension, used in place of an info emoji. -->
+  <String Id="IgInfoIcon"              Value="WixUI_Ico_Info" />
+
+  <!-- Screen 1: agreement -->
+  <String Id="IgAgreementTitle"        Value="Terms and Privacy" />
+  <String Id="IgAgreementDescription"  Value="Please review these before installing [ProductName]." />
+  <String Id="IgAgreementBody"         Value="ImageGlass is a fast, open-source, modern image viewer. Installing it means you accept the terms of use and the privacy policy published here:" />
+  <String Id="IgAgreementAgree"        Value="I have read and agree to the Terms and Privacy" />
+  <!-- Anchor markup for the MSI Hyperlink control; the raw URL doubles as the link text. -->
+  <String Id="IgTermsLink"             Value="&lt;a href=&quot;https://imageglass.org/terms?utm_source=ig_installer_[ProductVersion]&amp;utm_medium=ig_installer_click&amp;utm_campaign=ig_installer&quot;&gt;https://imageglass.org/terms&lt;/a&gt;" />
+
+  <!-- Screen 2: installation type -->
+  <String Id="IgScopeTitle"            Value="Installation type" />
+  <String Id="IgScopeDescription"      Value="Choose who to install [ProductName] for, and where." />
+  <String Id="IgScopeGroupLabel"       Value="Install for" />
+  <String Id="IgScopePerUser"          Value="Only me (recommended)" />
+  <String Id="IgScopePerUserNote"      Value="Installs to your user folder. No administrator rights needed." />
+  <String Id="IgScopePerMachine"       Value="All users of this computer" />
+  <String Id="IgScopePerMachineNote"   Value="Installs to Program Files, for everyone who uses this PC." />
+  <String Id="IgFolderLabel"           Value="Install location:" />
+  <!-- The UI extension defines WixUIBack/Next/Cancel but has no Browse string. -->
+  <String Id="IgBrowse"                Value="Br&amp;owse..." />
+  <String Id="IgElevationNote"         Value="Windows will ask for administrator approval when the install starts." />
+  <String Id="IgReplaceNote"           Value="An existing ImageGlass install was found and will be replaced." />
+  <String Id="IgReplaceNoteLocked"     Value="ImageGlass is already installed. Setup will replace it, so the install type is fixed to match it." />
+  <!-- Silent installs only: the wizard cannot reach a mismatch, because it locks the choice. -->
+  <String Id="IgScopeMismatchMachine"  Value="ImageGlass is already installed for all users of this computer. Windows Installer cannot move it to a per-user install, so run setup again with ALLUSERS=1 to update it, or uninstall it first." />
+  <String Id="IgScopeMismatchUser"     Value="ImageGlass is already installed for the current user only. Windows Installer cannot move it to a per-machine install, so run setup again with ALLUSERS=2 MSIINSTALLPERUSER=1 to update it, or uninstall it first." />
+
+  <!-- 10.0.5.825 only; its "All users" install is registered per-user and cannot be upgraded. -->
+  <String Id="IgScopeBrokenLegacy"     Value="ImageGlass 10.0.5.825 was installed for all users by a setup that recorded the install incorrectly, so it cannot be upgraded in place. You need to uninstall it first: {1B2217AA-C4FA-50EE-A284-588149763B66}" />
+
+  <!-- Two strings because an XML attribute cannot carry the line break, and no emoji: MSI
+       stores strings in an ANSI codepage, so anything outside CP1252 fails the build. -->
+  <String Id="IgProPitchTitle"         Value="Upgrade to ImageGlass Pro!" />
+  <String Id="IgProPitch"              Value="Everything you love about ImageGlass, tuned for professionals and teams. Unlock HDR tone mapping, free panning, and admin controls." />
+  <String Id="IgProLink"               Value="&lt;a href=&quot;https://imageglass.org/pricing?utm_source=ig_installer_[ProductVersion]&amp;utm_medium=ig_installer_click&amp;utm_campaign=ig_installer&quot;&gt;See Plans and Pricing&lt;/a&gt;" />
+
+  <!-- Screen 4: complete -->
+  <String Id="IgDialogBitmap"          Value="WixUI_Bmp_Dialog" />
+  <String Id="IgCompleteTitle"         Value="Completed the [ProductName] Setup Wizard" />
+  <String Id="IgCompleteDescription"   Value="Click the Finish button to exit the Setup Wizard." />
+  <String Id="IgFinish"                Value="&amp;Finish" />
+  <String Id="IgLaunchAfterInstall"    Value="Launch ImageGlass" />
+
+</WixLocalization>

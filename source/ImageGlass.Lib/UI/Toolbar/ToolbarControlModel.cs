@@ -1,4 +1,4 @@
-﻿/*
+/*
 ImageGlass - A Fast, Seamless Photo Viewer
 Copyright (C) 2010 - 2026 DUONG DIEU PHAP
 Project homepage: https://imageglass.org
@@ -31,9 +31,10 @@ public class ToolbarControlModel : PhReactive
     public static Thickness ItemPadding => ToolbarItemModel.ItemPadding;
 
 
-    public static ToolbarItemModel ButtonOverflowVM => new()
+    // Text holds the language key, not the translated string, so it re-resolves on language change
+    public ToolbarItemModel ButtonOverflowVM { get; } = new()
     {
-        Text = Core.Lang[LangId.FrmMain_MnuToolbarOverflow],
+        Text = nameof(LangId.Menu_MnuToolbarOverflow),
         Image = nameof(IgThemeIcon.MainMenu),
     };
 
@@ -49,8 +50,18 @@ public class ToolbarControlModel : PhReactive
         }
     } = new()
     {
-        Text = Core.Lang[LangId.FrmMain_MnuMain],
+        Text = nameof(LangId.Menu_MnuMain),
         Image = nameof(IgThemeIcon.MainMenu),
     };
+
+
+    /// <summary>
+    /// Re-resolves the localized text of the menu buttons after the app language changed.
+    /// </summary>
+    public void RefreshLanguage()
+    {
+        ButtonMenuVM.RefreshLanguage();
+        ButtonOverflowVM.RefreshLanguage();
+    }
 
 }

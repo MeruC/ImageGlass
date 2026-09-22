@@ -35,20 +35,30 @@ public partial class BHelper
 
 
     /// <summary>
-    /// Gets the base dir path.
+    /// Where this process reads the app dir vs. where it really is; <c>null</c> when they are the same.
     /// </summary>
-    public static string BasePath => AppDomain.CurrentDomain.BaseDirectory;
+    private static readonly Lazy<(string Mounted, string Real)?> _appDirMount = new(ReadAppDirMount);
 
 
     /// <summary>
-    /// Gets the config dir path.
+    /// Gets the full, real dir path of the app binary. Use <see cref="BaseDir(string[])"/> to reach a
+    /// file in it: a sandboxed app reads its own dir through a mount, so this path is display-only.
     /// </summary>
-    public static string ConfigPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppName);
+    public static string BasePath => GetRealPlatformPath(AppDomain.CurrentDomain.BaseDirectory);
+
+
+    /// <summary>
+    /// Gets the config dir path: the base dir in portable mode (<see cref="ConfigMode"/>),
+    /// else the per-user app data dir.
+    /// </summary>
+    public static string ConfigPath => ConfigMode.IsPortable
+        ? BaseDir()
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppName);
 
 
 
     /// <summary>
-    /// Computes the full path based on the installed folder.
+    /// Computes the full path based on the installed folder, as this process must address it.
     /// </summary>
     public static string BaseDir(params string[] paths)
     {
@@ -56,7 +66,7 @@ public partial class BHelper
         newPaths.Insert(0, BasePath);
         var path = Path.Combine([.. newPaths]);
 
-        return path;
+        return ToProcessPath(path);
     }
 
 
@@ -77,13 +87,14 @@ public partial class BHelper
                 || firstPath.Equals(Dir.Language, StringComparison.OrdinalIgnoreCase)
                 || firstPath.Equals(Dir.Plugins, StringComparison.OrdinalIgnoreCase)
                 || firstPath.Equals(Dir.Cache, StringComparison.OrdinalIgnoreCase)
-                || firstPath.Equals(Dir.Temporary, StringComparison.OrdinalIgnoreCase);
+                || firstPath.Equals(Dir.Temporary, StringComparison.OrdinalIgnoreCase)
+                || firstPath.Equals(Dir.Logs, StringComparison.OrdinalIgnoreCase);
 
             // create the built-in directory if not exist
             if (isBuiltinDir)
             {
                 var builtinConfigPath = Path.Combine(ConfigPath, firstPath);
-                Directory.CreateDirectory(builtinConfigPath);
+                TryCreateDirectory(builtinConfigPath);
                 isDirCreated = true;
             }
         }
@@ -92,7 +103,7 @@ public partial class BHelper
         // 2. create the config directory if not exist
         if (!isDirCreated)
         {
-            Directory.CreateDirectory(ConfigPath);
+            TryCreateDirectory(ConfigPath);
         }
 
 
@@ -102,6 +113,111 @@ public partial class BHelper
         var path = Path.Combine([.. newPaths]);
 
         return path;
+    }
+
+
+    /// <summary>
+    /// Creates the directory, ignoring failures: a read-only config dir must not throw out of a
+    /// path getter, so the failing read/write reports it instead.
+    /// </summary>
+    private static void TryCreateDirectory(string dirPath)
+    {
+        try
+        {
+            Directory.CreateDirectory(dirPath);
+        }
+        catch { }
+    }
+
+
+    /// <summary>
+    /// Like <see cref="ConfigDir(string[])"/> but resolves to the real physical path;
+    /// use it to show/open config in the file explorer.
+    /// </summary>
+    public static string GetRealPlatformConfigDir(params string[] paths)
+    {
+        return GetRealPlatformPath(ConfigDir(paths));
+    }
+
+
+    /// <summary>
+    /// Reads the Flatpak app-dir mount from <c>/.flatpak-info</c> (<c>app-path</c> is the real dir
+    /// behind <c>/app</c>); <c>null</c> on every other platform and outside the sandbox.
+    /// </summary>
+    private static (string Mounted, string Real)? ReadAppDirMount()
+    {
+        if (!IsFlatpakSandbox) return null;
+
+        try
+        {
+            const string key = "app-path=";
+
+            foreach (var line in File.ReadLines("/.flatpak-info"))
+            {
+                if (!line.StartsWith(key, StringComparison.Ordinal)) continue;
+
+                var realPath = line[key.Length..].Trim().TrimEnd('/');
+                return string.IsNullOrEmpty(realPath) ? null : ("/app", realPath);
+            }
+        }
+        catch { }
+
+        return null;
+    }
+
+
+    /// <summary>
+    /// Resolves an app-owned path to where it physically lives, as the OS and the user see it: this
+    /// process may reach its own folders through a container mount or a redirected copy.
+    /// </summary>
+    /// <remarks>
+    /// Two platform indirections, neither visible outside the process: a sandboxed Linux app (Flatpak)
+    /// mounts its install dir elsewhere, and a packaged Windows app (MSIX) may redirect
+    /// <c>%LocalAppData%</c> writes into the package container. Use this wherever a path is shown to
+    /// the user or handed to something outside the process (file manager, another app), and NEVER to
+    /// read or write - the real path is not reachable from in here. <see cref="ToProcessPath"/> is the
+    /// inverse.
+    /// </remarks>
+    public static string GetRealPlatformPath(string? path)
+    {
+        if (string.IsNullOrEmpty(path)) return path ?? string.Empty;
+
+        var appDir = _appDirMount.Value;
+        var realPath = appDir is null
+            ? path
+            : SwapPathPrefix(path, appDir.Value.Mounted, appDir.Value.Real);
+
+        return Core.ShellProvider?.GetActualPath(realPath) ?? realPath;
+    }
+
+
+    /// <summary>
+    /// Inverse of <see cref="GetRealPlatformPath"/>: maps a real app-dir path back to the mount this
+    /// process reads through. Only the mount is undone; a redirected copy is already readable.
+    /// </summary>
+    private static string ToProcessPath(string path)
+    {
+        var appDir = _appDirMount.Value;
+
+        return appDir is null
+            ? path
+            : SwapPathPrefix(path, appDir.Value.Real, appDir.Value.Mounted);
+    }
+
+
+    /// <summary>
+    /// Replaces the <paramref name="from"/> dir prefix of <paramref name="path"/> with
+    /// <paramref name="to"/>, matching whole segments only. Both prefixes carry no trailing separator.
+    /// </summary>
+    private static string SwapPathPrefix(string path, string from, string to)
+    {
+        if (!path.StartsWith(from, StringComparison.Ordinal)) return path;
+
+        // a sibling such as "/appdata" must not match the "/app" prefix
+        var rest = path[from.Length..];
+        if (rest.Length > 0 && rest[0] != Path.DirectorySeparatorChar) return path;
+
+        return to + rest;
     }
 
 
@@ -176,6 +292,40 @@ public partial class BHelper
 
 
     /// <summary>
+    /// Checks whether <paramref name="path"/> resolves to a location inside
+    /// <paramref name="root"/> (or equals it). Both are resolved with
+    /// <see cref="System.IO.Path.GetFullPath(string)"/> first, so <c>..</c>
+    /// segments and absolute paths cannot escape the root.
+    /// </summary>
+    public static bool IsPathContainedIn(string? path, string? root)
+    {
+        if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(root)) return false;
+
+        string fullPath, fullRoot;
+        try
+        {
+            fullPath = Path.GetFullPath(path);
+            fullRoot = Path.GetFullPath(root);
+        }
+        catch
+        {
+            return false;
+        }
+
+        // Trailing separator on root so a sibling like "_pluginsEvil" can't prefix-match "_plugins".
+        var sep = Path.DirectorySeparatorChar;
+        if (!fullRoot.EndsWith(sep)) fullRoot += sep;
+
+        // Windows and macOS default to case-insensitive filesystems; Linux is case-sensitive.
+        var comparison = OperatingSystem.IsLinux()
+            ? StringComparison.Ordinal
+            : StringComparison.OrdinalIgnoreCase;
+
+        return (fullPath + sep).StartsWith(fullRoot, comparison);
+    }
+
+
+    /// <summary>
     /// Get distinct directories list from paths list.
     /// </summary>
     public static (List<string> DirPaths, List<string> FilePaths) GetDistinctDirsFromPaths(IEnumerable<string> pathList)
@@ -236,7 +386,149 @@ public partial class BHelper
 
 
     /// <summary>
-    /// Resolves a relative/protocol/link path to absolute path.
+    /// Gets the next (<paramref name="direction"/> = <c>+1</c>) or previous (<c>-1</c>) sibling
+    /// directory relative to <paramref name="currentPath"/> that directly contains at least one
+    /// image with an allowed extension. Empty/unreadable siblings are skipped.
+    /// </summary>
+    /// <param name="currentPath">A directory path, or an image file path (its folder is used).</param>
+    /// <param name="direction"><c>+1</c> for next, <c>-1</c> for previous.</param>
+    /// <param name="allowedExtensions">Allowed extensions with a leading dot (e.g. <c>.jpg</c>).</param>
+    /// <param name="includeHidden">Whether hidden folders/files are eligible.</param>
+    /// <returns>Full path of the sibling directory, or <c>null</c> if none is found.</returns>
+    public static string? GetSiblingDir(string? currentPath, int direction,
+        ICollection<string> allowedExtensions, bool includeHidden)
+    {
+        if (string.IsNullOrEmpty(currentPath)) return null;
+
+        // accept a file path too: use its containing folder
+        var currentDir = CheckPath(currentPath) == PathType.File
+            ? Path.GetDirectoryName(currentPath)
+            : currentPath;
+        if (string.IsNullOrEmpty(currentDir)) return null;
+
+        currentDir = currentDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var parentDir = Directory.GetParent(currentDir)?.FullName;
+        if (string.IsNullOrEmpty(parentDir)) return null;
+
+        try
+        {
+            // the current dir must stay in the list to locate itself, even when it is hidden
+            var siblingDirs = Directory.GetDirectories(parentDir)
+                .OrderBy(d => d, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var currentIndex = siblingDirs.FindIndex(d =>
+                string.Equals(d.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                    currentDir, StringComparison.OrdinalIgnoreCase));
+            if (currentIndex < 0) return null;
+
+            for (var i = currentIndex + direction; i >= 0 && i < siblingDirs.Count; i += direction)
+            {
+                if (IsPathSkippedByAttributes(siblingDirs[i], includeHidden)) continue;
+                if (DirContainsImage(siblingDirs[i], allowedExtensions, includeHidden)) return siblingDirs[i];
+            }
+        }
+        catch (UnauthorizedAccessException) { }
+        catch (IOException) { }
+
+        return null;
+    }
+
+
+    /// <summary>
+    /// Checks whether <paramref name="dir"/> directly contains a file whose extension is in
+    /// <paramref name="allowedExtensions"/> (extensions include the leading dot, e.g. <c>.jpg</c>).
+    /// </summary>
+    public static bool DirContainsImage(string? dir, ICollection<string> allowedExtensions, bool includeHidden)
+    {
+        if (string.IsNullOrEmpty(dir)) return false;
+
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(dir, "*", GetEnumerationOptions(includeHidden)))
+            {
+                if (allowedExtensions.Contains(Path.GetExtension(file))) return true;
+            }
+        }
+        catch { }
+
+        return false;
+    }
+
+
+    /// <summary>
+    /// Gets the shared file/folder enumeration options: system items are always skipped,
+    /// hidden ones only when <paramref name="includeHidden"/> is <c>false</c>.
+    /// </summary>
+    public static EnumerationOptions GetEnumerationOptions(bool includeHidden, bool recurse = false)
+    {
+        return new EnumerationOptions()
+        {
+            IgnoreInaccessible = true,
+            AttributesToSkip = GetSkippedFileAttributes(includeHidden),
+            RecurseSubdirectories = recurse,
+        };
+    }
+
+
+    /// <summary>
+    /// Gets the file attributes excluded from browsing (see <see cref="GetEnumerationOptions"/>).
+    /// </summary>
+    public static FileAttributes GetSkippedFileAttributes(bool includeHidden)
+    {
+        var attrs = FileAttributes.System;
+        if (!includeHidden) attrs |= FileAttributes.Hidden;
+
+        return attrs;
+    }
+
+
+    /// <summary>
+    /// Checks whether <paramref name="path"/> carries an attribute excluded from browsing.
+    /// Unreadable paths are treated as not skipped.
+    /// </summary>
+    public static bool IsPathSkippedByAttributes(string? path, bool includeHidden)
+    {
+        if (string.IsNullOrEmpty(path)) return false;
+
+        try
+        {
+            return (File.GetAttributes(path) & GetSkippedFileAttributes(includeHidden)) != 0;
+        }
+        catch { return false; }
+    }
+
+
+    /// <summary>
+    /// Checks whether <paramref name="path"/>, or any of its folders up to (but excluding)
+    /// <paramref name="rootDir"/>, carries an attribute excluded from browsing. Used to keep
+    /// items inside a hidden sub-folder out of the photo list.
+    /// </summary>
+    public static bool IsPathSkippedUnderRoot(string? path, string? rootDir, bool includeHidden)
+    {
+        if (string.IsNullOrEmpty(path)) return false;
+        if (IsPathSkippedByAttributes(path, includeHidden)) return true;
+        if (string.IsNullOrEmpty(rootDir)) return false;
+
+        var root = rootDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var dir = Path.GetDirectoryName(path);
+
+        // walk up to the watched root; the root itself may legitimately be hidden
+        while (!string.IsNullOrEmpty(dir)
+            && !string.Equals(dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                root, StringComparison.OrdinalIgnoreCase))
+        {
+            if (IsPathSkippedByAttributes(dir, includeHidden)) return true;
+            dir = Path.GetDirectoryName(dir);
+        }
+
+        return false;
+    }
+
+
+    /// <summary>
+    /// Resolves a relative/protocol/link path to absolute path,
+    /// including <c>.app</c> bundle on macOS.
     /// </summary>
     public static string ResolvePath(string? inputPath)
     {
@@ -259,21 +551,92 @@ public partial class BHelper
             path = path[1..^1];
         }
 
-        // parse environment vars to absolute path
-        path = Environment.ExpandEnvironmentVariables(path);
+        // skip expansion when the literal path exists: a filename containing "%TEMP%" must survive
+        if (!File.Exists(path) && !Directory.Exists(path))
+        {
+            path = Environment.ExpandEnvironmentVariables(path);
+        }
 
         if (string.Equals(Path.GetExtension(inputPath), Win32ShortcutExtension, StringComparison.OrdinalIgnoreCase))
         {
             path = Core.ShellProvider?.GetTargetPathFromShortcut(path) ?? path;
         }
 
-        return path;
+        // macOS: a .app is a directory, so resolve to its inner executable for direct launching
+        if (OS == OSType.Mac
+            && path.EndsWith(".app", StringComparison.OrdinalIgnoreCase)
+            && Directory.Exists(path))
+        {
+            // Prefer CFBundleExecutable from Info.plist; fall back to the bundle name.
+            var exeName = GetMacOsAppExecutableName(path)
+                ?? Path.GetFileNameWithoutExtension(path.TrimEnd('/'));
+
+            var innerExe = Path.Combine(path, "Contents", "MacOS", exeName);
+            if (File.Exists(innerExe)) path = innerExe;
+        }
+
+        return ToAbsolutePath(path);
+    }
+
+
+    /// <summary>
+    /// Expands a relative filesystem path against the current directory. Anything that is not an
+    /// existing file or folder is returned unchanged, so shell URIs survive.
+    /// </summary>
+    private static string ToAbsolutePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return path ?? string.Empty;
+        if (Path.IsPathFullyQualified(path)) return path;
+
+        try
+        {
+            var fullPath = Path.GetFullPath(path);
+
+            // a shell URI expands into a nonsense path instead of throwing
+            return File.Exists(fullPath) || Directory.Exists(fullPath) ? fullPath : path;
+        }
+        catch { return path; }
+    }
+
+
+
+    /// <summary>
+    /// Reads <c>CFBundleExecutable</c> from a macOS app bundle's <c>Contents/Info.plist</c>.
+    /// Returns <c>null</c> if the plist is missing or the key is absent.
+    /// </summary>
+    private static string? GetMacOsAppExecutableName(string appBundlePath)
+    {
+        var plistPath = Path.Combine(appBundlePath, "Contents", "Info.plist");
+        if (!File.Exists(plistPath)) return null;
+
+        try
+        {
+            // Info.plist is a <dict> of alternating <key>/<value> siblings.
+            var doc = System.Xml.Linq.XDocument.Load(plistPath);
+            var dict = doc.Root?.Element("dict");
+            if (dict is null) return null;
+
+            var elements = dict.Elements().ToList();
+            for (var i = 0; i < elements.Count - 1; i++)
+            {
+                if (elements[i].Name.LocalName == "key"
+                    && elements[i].Value == "CFBundleExecutable"
+                    && elements[i + 1].Name.LocalName == "string")
+                {
+                    var name = elements[i + 1].Value.Trim();
+                    return string.IsNullOrEmpty(name) ? null : name;
+                }
+            }
+        }
+        catch { }
+
+        return null;
     }
 
 
     /// <summary>
     /// Builds the command line from config value.
-    /// Example: <c>/EnableFullScreen=True</c>
+    /// Example: <c>-p:EnableFullScreen=True</c>
     /// </summary>
     public static string BuildConfigCmdLine(string configName, object? configValue)
     {
@@ -293,23 +656,45 @@ public partial class BHelper
 
         try
         {
-            var ub = new UriBuilder(url);
-            var queries = HttpUtility.ParseQueryString(ub.Query);
-            queries["utm_source"] = $"app_{Core.BuildInfo.AppVersion}";
-            queries["utm_medium"] = "app_click";
-            queries["utm_campaign"] = campaign;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return;
 
-            ub.Query = queries.ToString();
+            // only tag our own http(s) pages with campaign params. Protocol URIs (ms-settings:,
+            // mailto:, ...) break if a query is appended, and third-party hosts (github.com) must
+            // never receive the app version or which button was clicked.
+            if (uri.Scheme is "http" or "https" && IsImageGlassHost(uri.Host))
+            {
+                var ub = new UriBuilder(uri);
+                var queries = HttpUtility.ParseQueryString(ub.Query);
+                queries["utm_source"] = $"app_{Core.BuildInfo.FullVersion}";
+                queries["utm_medium"] = "app_click";
+                queries["utm_campaign"] = campaign;
+
+                ub.Query = queries.ToString();
+                uri = ub.Uri;
+            }
 
 
             var launcher = TopLevel.GetTopLevel(visual)?.Launcher;
             if (launcher is not null)
             {
-                await launcher.LaunchUriAsync(ub.Uri);
+                await launcher.LaunchUriAsync(uri);
             }
         }
         catch { }
     }
+
+
+    /// <summary>
+    /// Whether <paramref name="host"/> is imageglass.org or one of its subdomains.
+    /// </summary>
+    private static bool IsImageGlassHost(string? host)
+    {
+        if (string.IsNullOrEmpty(host)) return false;
+
+        return host.Equals(Const.WEBSITE_HOST, StringComparison.OrdinalIgnoreCase)
+            || host.EndsWith($".{Const.WEBSITE_HOST}", StringComparison.OrdinalIgnoreCase);
+    }
+
 
 
     /// <summary>

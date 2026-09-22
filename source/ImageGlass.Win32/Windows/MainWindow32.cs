@@ -1,4 +1,4 @@
-﻿/*
+/*
 ImageGlass - A Fast, Seamless Photo Viewer
 Copyright (C) 2010 - 2026 DUONG DIEU PHAP
 Project homepage: https://imageglass.org
@@ -81,12 +81,19 @@ public partial class MainWindow32 : MainWindow
     }
 
 
+    protected override void OnIgTitleBarIconVisibilityChanged(bool show)
+    {
+        Win32WindowApi.SetTitleBarIconVisible(Handle, show);
+    }
+
+
     private void ColorProfileProvider_Changed(IWindowColorProfileProvider sender, ColorProfileChangedEventArgs e)
     {
-        // update the current color profile
+        // Update the profile for later loads only. Re-decoding the on-screen photo here would
+        // flash the viewer every time the window is dragged to another monitor.
         if (Core.Config.ColorProfile == nameof(ColorProfileOption.CurrentMonitorProfile))
         {
-            Core.UpdateDestColorProfile();
+            Core.UpdateDestColorProfile(requiresPhotoReload: false);
         }
     }
 

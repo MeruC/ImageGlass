@@ -451,7 +451,7 @@ public static class Config
     /// Gets, sets the maximum image dimension when caching by <see cref="Base.Services.ImageBooster"/>.
     /// If this value is <c>less than or equals 0</c>, the option will be ignored.
     /// </summary>
-    public static int ImageBoosterCacheMaxDimension { get; set; } = 8_000;
+    public static int ImageBoosterCacheMaxDimension { get; set; } = 9_000;
 
     /// <summary>
     /// Gets, sets the maximum image file size (in MB) when caching by <see cref="Base.Services.ImageBooster"/>.

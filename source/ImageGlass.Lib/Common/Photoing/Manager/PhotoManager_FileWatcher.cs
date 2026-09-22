@@ -186,7 +186,21 @@ public partial class PhotoManager
         var ext = Path.GetExtension(filePath);
         if (string.IsNullOrEmpty(ext)) return false;
 
-        return Core.Config.FileFormats.Contains(ext);
+        // a save in progress writes a sibling temp file that keeps the real extension
+        if (SaveStaging.IsStagingFile(filePath)) return false;
+
+        return Core.GetSupportedFileExtensions().Contains(ext);
+    }
+
+
+    /// <summary>
+    /// Checks whether the file, or any sub-folder holding it, is excluded from browsing.
+    /// Keeps the watcher from re-adding what the file search deliberately skipped.
+    /// </summary>
+    private bool IsExcludedFile(string? filePath)
+    {
+        return BHelper.IsPathSkippedUnderRoot(filePath, FileWatcherFolderPath,
+            Core.Config.EnableHiddenImagesLoading);
     }
 
 
@@ -196,6 +210,7 @@ public partial class PhotoManager
     private void FileWatcher_OnCreated(object? sender, FileChangedEvent e)
     {
         if (!IsSupportedFile(e.FullPath)) return;
+        if (IsExcludedFile(e.FullPath)) return;
         if (IndexOf(e.FullPath) >= 0) return;
 
         _pendingAdds.Enqueue(e.FullPath);
@@ -218,6 +233,8 @@ public partial class PhotoManager
         // if the file is not in our list, treat it as a new file
         if (IndexOf(e.FullPath) < 0)
         {
+            if (IsExcludedFile(e.FullPath)) return;
+
             _pendingAdds.Enqueue(e.FullPath);
             BHelper.Debounce(300, _processAddedFilesAction);
             return;
@@ -233,6 +250,14 @@ public partial class PhotoManager
         var newFilePath = e.FullPath ?? "";
         var oldFilePath = e.OldFullPath ?? "";
 
+        // a finished save renames its staging file onto the target: that is a content change,
+        // not a new file, so routing it here avoids a duplicate entry for a photo already listed
+        if (SaveStaging.IsStagingFile(oldFilePath))
+        {
+            FileWatcher_OnChanged(sender, e);
+            return;
+        }
+
         var oldSupported = IsSupportedFile(oldFilePath);
         var newSupported = IsSupportedFile(newFilePath);
 
@@ -246,9 +271,14 @@ public partial class PhotoManager
             return;
         }
 
+        // renamed into a hidden folder (or made hidden) -> drop it from the list
+        var newExcluded = IsExcludedFile(newFilePath);
+
         // old was not supported, new is -> treat as add
         if (!oldSupported && newSupported)
         {
+            if (newExcluded) return;
+
             _pendingAdds.Enqueue(newFilePath);
             BHelper.Debounce(300, _processAddedFilesAction);
             return;
@@ -258,6 +288,12 @@ public partial class PhotoManager
         var imgIndex = IndexOf(oldFilePath);
         if (imgIndex >= 0)
         {
+            if (newExcluded)
+            {
+                _deleteQueue.Enqueue(oldFilePath);
+                return;
+            }
+
             SetFilePath(imgIndex, newFilePath);
 
             FileWatcherChanged?.Invoke(this, new FileWatcherChangedEventArgs(
@@ -265,7 +301,7 @@ public partial class PhotoManager
                 [newFilePath],
                 [oldFilePath]));
         }
-        else
+        else if (!newExcluded)
         {
             // file not in our list yet -> add it
             _pendingAdds.Enqueue(newFilePath);
@@ -302,7 +338,7 @@ public partial class PhotoManager
         // determine sorted insertion index for each file
         var options = new FileSearchOptions()
         {
-            AllowedExtensions = Core.Config.FileFormats,
+            AllowedExtensions = Core.GetSupportedFileExtensions(),
             UseExplorerSortOrder = Core.Config.EnableExplorerSortOrder,
             SearchSubDirectories = Core.Config.EnableSubfoldersLoading,
             GroupByDir = Core.Config.EnableImageFolderGrouping,
@@ -441,19 +477,54 @@ public partial class PhotoManager
 
 
             string currentFilePath;
+            int currentIndex;
             lock (_lock)
             {
+                currentIndex = CurrentIndex;
                 currentFilePath = CurrentFilePath;
             }
 
             // check if the currently viewed photo was deleted
-            var currentWasDeleted = deletedList.Contains(currentFilePath, StringComparer.OrdinalIgnoreCase);
+            var currentWasDeleted = deletedSet.Contains(currentFilePath);
             var affectedCurrentFilePath = currentWasDeleted ? currentFilePath : null;
 
+            // deletions ahead of the current photo shift the slot its successor lands in
+            var deletedBeforeCurrent = 0;
+            if (currentWasDeleted)
+            {
+                foreach (var filePath in deletedList)
+                {
+                    var index = IndexOf(filePath);
+                    if (index >= 0 && index < currentIndex) deletedBeforeCurrent++;
+                }
+            }
+
             // remove from list
+            var removedAny = false;
             foreach (var filePath in deletedList)
             {
+                if (IndexOf(filePath) < 0) continue;
+
                 Remove(filePath);
+                removedAny = true;
+            }
+
+            if (removedAny)
+            {
+                // Remove() never touches the selection, so re-anchor it: the surviving current photo's
+                // new index, else the slot its successor shifted into (Count when it had none)
+                lock (_lock)
+                {
+                    _currentIndex = currentWasDeleted
+                        ? Math.Min(currentIndex - deletedBeforeCurrent, (int)Count)
+                        : IndexOf(currentFilePath);
+                }
+
+                // removals shifted indexes, so cache index tracking no longer maps to the right photos
+                lock (_cacheLock)
+                {
+                    _cachedIndexes.Clear();
+                }
             }
 
             FileWatcherChanged?.Invoke(this, new FileWatcherChangedEventArgs(

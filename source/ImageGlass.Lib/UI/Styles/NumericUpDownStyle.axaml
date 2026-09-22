@@ -1,0 +1,69 @@
+<Styles
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:coll="using:System.Collections"
+    xmlns:types="using:ImageGlass.Common.Types">
+
+    <!--
+        Every NumericUpDown in the app is button-less, so the field is just a styled TextBox:
+        a transparent ButtonSpinner (kept for spin/keyboard logic) hosts a normal PART_TextBox.
+        It inherits TextBoxStyle wholesale, so rest/hover/focus/disabled and the non-resizing
+        2px focus underline all match TextBox, with no layout shift and no transition flash.
+    -->
+    <Style Selector="NumericUpDown">
+        <Setter Property="Template">
+            <ControlTemplate>
+                <DataValidationErrors>
+                    <ButtonSpinner
+                        Name="PART_Spinner"
+                        MinWidth="0"
+                        Padding="0"
+                        HorizontalContentAlignment="Stretch"
+                        VerticalContentAlignment="Stretch"
+                        AllowSpin="{TemplateBinding AllowSpin}"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        ButtonSpinnerLocation="{TemplateBinding ButtonSpinnerLocation}"
+                        IsTabStop="False"
+                        ShowButtonSpinner="{TemplateBinding ShowButtonSpinner}">
+                        <TextBox
+                            Name="PART_TextBox"
+                            MinWidth="0"
+                            Padding="{TemplateBinding Padding}"
+                            HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                            AcceptsReturn="False"
+                            CornerRadius="{TemplateBinding CornerRadius}"
+                            Foreground="{TemplateBinding Foreground}"
+                            InnerLeftContent="{CompiledBinding InnerLeftContent, RelativeSource={RelativeSource TemplatedParent}}"
+                            InnerRightContent="{CompiledBinding InnerRightContent, RelativeSource={RelativeSource TemplatedParent}}"
+                            IsReadOnly="{TemplateBinding IsReadOnly}"
+                            PlaceholderForeground="{TemplateBinding PlaceholderForeground}"
+                            PlaceholderText="{TemplateBinding PlaceholderText}"
+                            Text="{TemplateBinding Text}"
+                            TextAlignment="{TemplateBinding TextAlignment}"
+                            TextWrapping="NoWrap" />
+                    </ButtonSpinner>
+                </DataValidationErrors>
+            </ControlTemplate>
+        </Setter>
+
+        <!--  error message: small text in the critical color (matches TextBox)  -->
+        <Style Selector="^ /template/ DataValidationErrors">
+            <Setter Property="ErrorTemplate">
+                <DataTemplate x:DataType="coll:IEnumerable">
+                    <ItemsControl Foreground="{DynamicResource IG_TextDangerBrush}" ItemsSource="{CompiledBinding}">
+                        <ItemsControl.Styles>
+                            <Style Selector="TextBlock">
+                                <Setter Property="TextWrapping" Value="Wrap" />
+                                <Setter Property="FontSize" Value="{x:Static types:Const.FONT_SIZE_SMALL}" />
+                            </Style>
+                        </ItemsControl.Styles>
+                    </ItemsControl>
+                </DataTemplate>
+            </Setter>
+        </Style>
+
+    </Style>
+
+</Styles>

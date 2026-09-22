@@ -43,6 +43,11 @@ public sealed class CodecDecodeResult : PhDisposable
     public Size Size { get; set; } = new();
 
     /// <summary>
+    /// Gets or sets the linear scale the image was decoded at; below 1 when it was too large to decode fully.
+    /// </summary>
+    public double DecodeScale { get; set; } = 1;
+
+    /// <summary>
     /// Gets or sets the decoded single-frame raster image.
     /// </summary>
     public SKImage? SingleFrame { get; set; } = null;

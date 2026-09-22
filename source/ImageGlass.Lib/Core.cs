@@ -23,10 +23,13 @@ using Avalonia.Threading;
 using ImageGlass.Common.AppThemes;
 using ImageGlass.Common.Extensions;
 using ImageGlass.Common.Localization;
+using ImageGlass.Common.Loggers;
 using ImageGlass.Common.Photoing;
 using ImageGlass.Common.ServiceProviders;
+using ImageGlass.Common.ServiceProviders.Licensing;
 using ImageGlass.Common.Types;
 using ImageGlass.Plugins;
+using ImageGlass.SDK.Plugins;
 using ImageGlass.SDK.Tools;
 using ImageGlass.Tools;
 using ImageGlass.UI.Viewer;
@@ -36,6 +39,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace ImageGlass.Common;
@@ -48,7 +52,7 @@ public static class Core
     public static event EventHandler<ThemePackChangedEventArgs>? ThemeChanged;
     public static event EventHandler<PhotoUnloadedEventArgs>? PhotoUnloaded;
     public static event EventHandler<PhotoSaveEventArgs>? PhotoSaved;
-    public static event EventHandler? ColorProfileChanged;
+    public static event EventHandler<DestColorProfileChangedEventArgs>? ColorProfileChanged;
 
     private static string _initImagePathFromArgs = string.Empty;
 
@@ -97,9 +101,21 @@ public static class Core
 
 
     /// <summary>
-    /// Provides a singleton instance to manage Share dialog.
+    /// Provides an optional OS-level verifier for the identity of a tool process connecting
+    /// to the host IPC pipe. Windows-only; <c>null</c> elsewhere (the pipe's
+    /// <c>CurrentUserOnly</c> restriction is the cross-platform baseline).
     /// </summary>
-    public static IShareProvider ShareProvider { get; set; } = null!;
+    public static IPipeSecurityProvider? PipeSecurityProvider { get; set; } = null;
+
+
+    /// <summary>
+    /// Provides the Pro entitlement granted by the platform app store this build came from, e.g.
+    /// the Microsoft Store. <c>null</c> for a self-distributed build, which is every platform that
+    /// has no store channel yet. Must be registered before
+    /// <see cref="App.InitializeAppInstance"/>, because the license is resolved there, before the
+    /// other service providers are installed.
+    /// </summary>
+    public static IStoreEntitlementProvider? StoreEntitlementProvider { get; set; } = null;
 
 
     /// <summary>
@@ -177,7 +193,7 @@ public static class Core
 
 
     /// <summary>
-    /// Gets the system accent color.
+    /// Gets the app accent color derived from the theme/system accent (used to build accent resources).
     /// </summary>
     public static Color AccentColor { get; private set; } = new();
 
@@ -210,7 +226,32 @@ public static class Core
 
 
     /// <summary>
-    /// Gets the path of the image file from the arguments.
+    /// The active, signature-verified Pro license, or null when running as Classic.
+    /// </summary>
+    public static LicenseInfo? AppLicense { get; set; }
+
+
+    /// <summary>
+    /// A signature-verified license that does not cover this app version, or null. Kept so the
+    /// upgrade prompt can name the license the user already owns instead of pitching generically.
+    /// </summary>
+    public static LicenseInfo? OutOfScopeLicense { get; set; }
+
+
+    /// <summary>
+    /// A signature-verified license past its expiry, or null. Drives the expired-license prompt.
+    /// </summary>
+    public static LicenseInfo? ExpiredLicense { get; set; }
+
+
+    /// <summary>
+    /// Whether Pro features are unlocked (a valid license is active).
+    /// </summary>
+    public static bool IsProEnabled => AppLicense is not null;
+
+
+    /// <summary>
+    /// Gets the resolved path of the image file from the arguments.
     /// </summary>
     public static string InputImagePathFromArgs => _initImagePathFromArgs;
 
@@ -293,42 +334,269 @@ public static class Core
 
 
     /// <summary>
+    /// The background plugin-discovery task; completes once startup discovery finishes. Awaited
+    /// before opening a file whose type isn't yet supported, so a still-loading codec plugin can claim it.
+    /// </summary>
+    public static Task PluginDiscoveryTask { get; private set; } = Task.CompletedTask;
+
+
+    /// <summary>
     /// Discovers native plugins from the <c>_plugins</c> directory and registers their codecs.
     /// Runs on a background thread to avoid blocking app startup.
     /// </summary>
     public static void DiscoverPlugins()
     {
-        _ = Task.Run(() =>
+        PluginDiscoveryTask = Task.Run(() =>
         {
+            StartupTrace.Mark("plugins:discover:begin");
             var pluginsDir = BHelper.ConfigDir(Dir.Plugins);
+
+            // reap stashed installs before any library loads
+            PluginRegistry.CleanupTrashDirs(pluginsDir);
+
             var discovered = PluginRegistry.DiscoverManifests(pluginsDir);
+
+            // plugin codec exts; NOT persisted (browsable only while the plugin is loaded)
+            var pluginExtensions = new List<string>();
 
             foreach (var (manifest, dir) in discovered)
             {
                 try
                 {
-                    // Loads a single plugin and registers all of its codecs into the registry.
-                    var handle = PluginRegistry.LoadAndProbe(manifest, dir);
-                    if (handle is null) return;
-
-                    foreach (var proxy in PluginRegistry.CreateProxies(handle))
-                    {
-                        try
-                        {
-                            CodecRegistry.Register(proxy);
-                        }
-                        catch (Exception ex)
-                        {
-                            Debug.WriteLine($"[Core.DiscoverNativePlugins] register '{proxy.CodecId}' failed: {ex.Message}");
-                        }
-                    }
+                    RegisterPluginCodecs(manifest, dir, pluginExtensions);
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[Core.DiscoverNativePlugins] '{manifest.Id}' failed: {ex.Message}");
+                    Debug.WriteLine($"[Core.DiscoverPlugins] '{manifest.Id}' failed: {ex.Message}");
                 }
             }
+
+            StartupTrace.Mark("plugins:discover:end");
+
+            // purge legacy plugin exts from config; no list reload (races the initial open)
+            if (pluginExtensions.Count > 0)
+            {
+                Dispatcher.UIThread.Post(() => Config.PurgePluginFileFormats(pluginExtensions));
+            }
+
+            StartupTrace.Flush();
         });
+    }
+
+
+    // Loaded plugin id -> its registered proxies, so a hot-disable can unregister exactly those.
+    private static readonly Dictionary<string, List<NativeCodecProxy>> _pluginProxies = new(StringComparer.Ordinal);
+    private static readonly Lock _pluginProxiesLock = new();
+
+
+    /// <summary>
+    /// Loads one plugin, registers its codecs, tracks the proxies for hot-unload, and collects their
+    /// extensions. Returns <c>true</c> if any codec registered. Thread-safe; may run off the UI thread.
+    /// </summary>
+    private static bool RegisterPluginCodecs(PluginManifest manifest, string dir, List<string> pluginExtensions)
+    {
+        var handle = PluginRegistry.LoadAndProbe(manifest, dir);
+        if (handle is null) return false;
+
+        return RegisterProxies(handle, pluginExtensions);
+    }
+
+
+    /// <summary>
+    /// Builds and registers proxies for an already-loaded plugin. <paramref name="declaredExtensions"/>
+    /// collects the pre-filter extensions, which is the set <see cref="Config.PurgePluginFileFormats"/>
+    /// needs. Returns <c>true</c> if any codec registered.
+    /// </summary>
+    private static bool RegisterProxies(NativePlugin handle, List<string> declaredExtensions)
+    {
+        var proxies = new List<NativeCodecProxy>();
+        foreach (var proxy in PluginRegistry.CreateProxies(handle))
+        {
+            // Everything switched off: registering it would leave an empty-extension codec that
+            // the catch-all convention mistakes for the fallback decoder.
+            if (proxy.DecodingExtensions.Count == 0 && proxy.EncodingExtensions.Count == 0)
+            {
+                declaredExtensions.AddRange(proxy.DeclaredDecodingExtensions);
+                proxy.Dispose();
+                continue;
+            }
+
+            try
+            {
+                CodecRegistry.Register(proxy);
+                proxies.Add(proxy);
+                declaredExtensions.AddRange(proxy.DeclaredDecodingExtensions);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Core.RegisterProxies] register '{proxy.CodecId}' failed: {ex.Message}");
+                proxy.Dispose();
+            }
+        }
+
+        if (proxies.Count == 0) return false;
+
+        lock (_pluginProxiesLock)
+        {
+            _pluginProxies[handle.PluginId] = proxies;
+        }
+        return true;
+    }
+
+
+    /// <summary>
+    /// Rebuilds a loaded plugin's codec proxies in place so a change to its per-extension choices
+    /// takes effect without a restart. Reuses the probed capabilities: no library load, no re-hash.
+    /// UI thread only (writes <see cref="Config.FileFormats"/>); no-op when not loaded.
+    /// </summary>
+    public static void ReloadPluginCodecs(string pluginId)
+    {
+        var handle = PluginRegistry.GetLoadedPlugin(pluginId);
+        if (handle is null) return;
+
+        // Cached photos hold pixels and metadata from the codec that is about to stop winning.
+        // Also cancels in-flight prefetch, so nothing decodes against a proxy we are disposing.
+        Photos.ClearCache();
+
+        List<NativeCodecProxy>? old;
+        lock (_pluginProxiesLock)
+        {
+            _pluginProxies.Remove(pluginId, out old);
+        }
+
+        var oldDecodeExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (old is not null)
+        {
+            foreach (var proxy in old)
+            {
+                foreach (var ext in proxy.DecodingExtensions) oldDecodeExts.Add(ext);
+
+                // Unregister before disposing: Unregister clears the selection caches, and
+                // Register would reject a CodecId that is still present.
+                CodecRegistry.Unregister(proxy);
+                proxy.Dispose();
+            }
+        }
+
+        var declared = new List<string>();
+        RegisterProxies(handle, declared);
+
+        if (declared.Count > 0) Config.PurgePluginFileFormats(declared);
+
+        // A decode change alters the browsable set, so the image list has to be rebuilt.
+        // An encode-only change needs neither reload; the caller refreshes its own UI.
+        var newDecodeExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        lock (_pluginProxiesLock)
+        {
+            if (_pluginProxies.TryGetValue(pluginId, out var fresh))
+            {
+                foreach (var proxy in fresh)
+                {
+                    foreach (var ext in proxy.DecodingExtensions) newDecodeExts.Add(ext);
+                }
+            }
+        }
+
+        if (!oldDecodeExts.SetEquals(newDecodeExts))
+        {
+            InvalidateCodecsAndReload();
+            AppAPIProvider.IG_ReloadList();
+        }
+    }
+
+
+    /// <summary>
+    /// Hot-loads a plugin just enabled (after <c>PluginTrustPolicy.TrustAsync</c>) and reloads the
+    /// current photo. Returns <c>false</c> if it could not be loaded (quarantined, ABI mismatch, ...).
+    /// </summary>
+    public static async Task<bool> EnablePluginAsync(PluginManifest manifest, string pluginDir)
+    {
+        if (PluginRegistry.IsLoaded(manifest.Id)) return true;
+
+        var extensions = new List<string>();
+
+        // native load + SHA-256 hashing is I/O; keep it off the UI thread
+        var loaded = await Task.Run(() => RegisterPluginCodecs(manifest, pluginDir, extensions));
+        if (!loaded) return false;
+
+        // plugin formats are not persisted; purge any leftovers older versions baked in
+        if (extensions.Count > 0) Config.PurgePluginFileFormats(extensions);
+
+        Photos.ClearCache();
+        InvalidateCodecsAndReload();
+
+        // the plugin's formats are now live -> rebuild the image list so they become browsable
+        if (extensions.Count > 0) AppAPIProvider.IG_ReloadList();
+
+        return true;
+    }
+
+
+    /// <summary>
+    /// Hot-unloads a plugin the user just disabled (after <c>PluginTrustPolicy.DisableAsync</c>):
+    /// unregisters its codecs, frees the native library, and reloads the current photo.
+    /// </summary>
+    public static void DisablePlugin(string pluginId)
+    {
+        // free cached plugin buffers + cancel caching before the library is unloaded
+        Photos.ClearCache();
+
+        List<NativeCodecProxy>? proxies;
+        lock (_pluginProxiesLock)
+        {
+            _pluginProxies.Remove(pluginId, out proxies);
+        }
+
+        if (proxies is not null)
+        {
+            foreach (var proxy in proxies)
+            {
+                CodecRegistry.Unregister(proxy);
+                proxy.Dispose();
+            }
+        }
+
+        // frees the native library; late buffer releases are gated by PluginLiveToken
+        PluginRegistry.UnloadPlugin(pluginId);
+
+        InvalidateCodecsAndReload();
+    }
+
+
+    /// <summary>
+    /// Returns the effective set of supported image extensions: the persisted
+    /// <see cref="Config.FileFormats"/> unioned with the extensions contributed by all currently
+    /// loaded codec plugins. Plugin extensions are intentionally kept out of the persisted config
+    /// so they disappear when a plugin is disabled or removed; this is the set to use for file
+    /// listing, watching, picking, and default-viewer association.
+    /// </summary>
+    public static HashSet<string> GetSupportedFileExtensions()
+    {
+        var set = new HashSet<string>(Config.FileFormats, StringComparer.OrdinalIgnoreCase);
+
+        lock (_pluginProxiesLock)
+        {
+            foreach (var proxies in _pluginProxies.Values)
+            {
+                foreach (var proxy in proxies)
+                {
+                    foreach (var ext in proxy.DecodingExtensions) set.Add(ext);
+                }
+            }
+        }
+
+        return set;
+    }
+
+
+    /// <summary>
+    /// Drops the codec-selection caches and reloads the current photo (keeping zoom + pan) so a
+    /// plugin enable/disable takes effect immediately.
+    /// </summary>
+    private static void InvalidateCodecsAndReload()
+    {
+        CodecRegistry.InvalidateSelectionCaches();
+        AppAPIProvider.IG_Reload(false);
     }
 
 
@@ -354,6 +622,18 @@ public static class Core
                 Debug.WriteLine($"[Core.RegisterExternalTools] '{tool.ToolId}' failed: {ex.Message}");
             }
         }
+    }
+
+
+    /// <summary>
+    /// Rebuilds the external tools in <see cref="ToolRegistry"/> from the current
+    /// <see cref="Config.Tools"/>. Call after the tools setting is edited so the live registry
+    /// (and thus the Tools menu / <c>IG_OpenTool</c>) reflects the changes.
+    /// </summary>
+    public static void ReloadExternalTools()
+    {
+        ToolRegistry.RemoveExternalTools();
+        RegisterExternalTools();
     }
 
 
@@ -392,7 +672,8 @@ public static class Core
         // 2. Set default Inter font size for macOS, Linux
         if (BHelper.OS != OSType.Windows)
         {
-            app.Resources["ControlContentThemeFontSize"] = Const.FONT_SIZE_BODY;
+            app.Resources["ControlContentThemeFontSize"] =
+                app.Resources["ToolTipContentThemeFontSize"] = Const.FONT_SIZE_BODY;
         }
     }
 
@@ -419,6 +700,14 @@ public static class Core
             Resx.Set(ResxId.IG_BackgroundSuccessBrush, AppThemeColors.BackgroundSuccessDark.ToBrush());
             Resx.Set(ResxId.IG_BackgroundWarningBrush, AppThemeColors.BackgroundWarningDark.ToBrush());
             Resx.Set(ResxId.IG_BackgroundDangerBrush, AppThemeColors.BackgroundDangerDark.ToBrush());
+
+            Resx.Set(ResxId.IG_TextSuccessBrush, AppThemeColors.TextSuccessDark.ToBrush());
+            Resx.Set(ResxId.IG_TextWarningBrush, AppThemeColors.TextWarningDark.ToBrush());
+            Resx.Set(ResxId.IG_TextDangerBrush, AppThemeColors.TextDangerDark.ToBrush());
+
+            Resx.Set(ResxId.IG_TextSuccessColor, AppThemeColors.TextSuccessDark);
+            Resx.Set(ResxId.IG_TextWarningColor, AppThemeColors.TextWarningDark);
+            Resx.Set(ResxId.IG_TextDangerColor, AppThemeColors.TextDangerDark);
         }
         else
         {
@@ -426,13 +715,21 @@ public static class Core
             Resx.Set(ResxId.IG_BackgroundSuccessBrush, AppThemeColors.BackgroundSuccessLight.ToBrush());
             Resx.Set(ResxId.IG_BackgroundWarningBrush, AppThemeColors.BackgroundWarningLight.ToBrush());
             Resx.Set(ResxId.IG_BackgroundDangerBrush, AppThemeColors.BackgroundDangerLight.ToBrush());
+
+            Resx.Set(ResxId.IG_TextSuccessBrush, AppThemeColors.TextSuccessLight.ToBrush());
+            Resx.Set(ResxId.IG_TextWarningBrush, AppThemeColors.TextWarningLight.ToBrush());
+            Resx.Set(ResxId.IG_TextDangerBrush, AppThemeColors.TextDangerLight.ToBrush());
+
+            Resx.Set(ResxId.IG_TextSuccessColor, AppThemeColors.TextSuccessLight);
+            Resx.Set(ResxId.IG_TextWarningColor, AppThemeColors.TextWarningLight);
+            Resx.Set(ResxId.IG_TextDangerColor, AppThemeColors.TextDangerLight);
         }
 
-        var bgNeutralAlpha = Core.Theme.Settings.IsDarkMode ? 100 : 150;
+        var bgNeutralAlpha = 100;
         var bgColor = AppThemeColors.BgBrush.Color.NoAlpha();
-        var bgNeutral = bgColor.Blend(Core.Theme.InvertedBaseColor, 0.9f, bgNeutralAlpha);
-        var borderNeutral = bgColor.Blend(Core.Theme.InvertedBaseColor, 0.8f, bgNeutralAlpha);
-        var borderControl = bgColor.Blend(Core.Theme.InvertedBaseColor, 0.5f, bgNeutralAlpha);
+        var bgNeutral = bgColor.Blend(Core.Theme.InvertedBaseColor, 0.95f, bgNeutralAlpha);
+        var borderNeutral = bgColor.Blend(Core.Theme.InvertedBaseColor, 0.8f, bgNeutralAlpha / 2);
+        var borderControl = bgColor.Blend(Core.Theme.InvertedBaseColor, 0.5f, bgNeutralAlpha / 2);
 
         Resx.Set(ResxId.IG_BackgroundNeutralBrush, bgNeutral.ToBrush());
         Resx.Set(ResxId.IG_BorderNeutralBrush, borderNeutral.ToBrush());
@@ -442,10 +739,13 @@ public static class Core
 
         // update text color
         var textBrush = AppThemeColors.TextColorBrush.Color.ToBrush();
-        var textDisabled = AppThemeColors.TextColorBrush.Color.Blend(Core.Theme.BaseColor, 0.5f, AppThemeColors.TextColorBrush.A);
+        var textPlaceholder = AppThemeColors.TextColorBrush.Color.Blend(Core.Theme.BaseColor, 0.7f, AppThemeColors.TextColorBrush.A);
 
         Resx.Set(ResxId.SystemControlForegroundBaseHighBrush, textBrush);
         Resx.Set(ResxId.TextControlForeground, textBrush);
+        Resx.Set(ResxId.TextControlForegroundPointerOver, textBrush);
+        Resx.Set(ResxId.TextControlForegroundFocused, textBrush);
+        Resx.Set(ResxId.TextControlPlaceholderForeground, textPlaceholder.ToBrush());
         Resx.Set(ResxId.CheckBoxForegroundChecked, textBrush);
         Resx.Set(ResxId.CheckBoxForegroundCheckedPointerOver, textBrush);
         Resx.Set(ResxId.CheckBoxForegroundUnchecked, textBrush);
@@ -528,6 +828,16 @@ public static class Core
 
         // 3. set background color
         Resx.Set(ResxId.IG_ViewerBackgroundBrush, bgColor.ToBrush());
+
+
+        // 4. set tool host background color
+        var toolHostBg = bgColor.Blend(Core.Theme.BaseColor, 0.55, Math.Max((byte)50, bgColor.A));
+        if (bgColor.NoAlpha() == Core.Theme.BaseColor)
+        {
+            toolHostBg = bgColor.Blend(Core.Theme.InvertedBaseColor, 0.95, Math.Max((byte)50, bgColor.A));
+        }
+
+        Resx.Set(ResxId.IG_ToolHostBackgroundBrush, toolHostBg.ToBrush());
     }
 
 
@@ -540,12 +850,13 @@ public static class Core
 
         // update app accent color
         var accent = Core.AccentColor;
-        var accentLight1 = accent.WithBrightness(0.2f);
-        var accentLight2 = accent.WithBrightness(0.3f);
-        var accentLight3 = accent.WithBrightness(0.4f);
-        var accentDark1 = accent.WithBrightness(-0.2f);
-        var accentDark2 = accent.WithBrightness(-0.3f);
-        var accentDark3 = accent.WithBrightness(-0.4f);
+        var accentLight1 = accent.WithBrightness(0.12f);
+        var accentLight2 = accent.WithBrightness(0.28f);
+        var accentLight3 = accent.WithBrightness(0.5f);
+
+        var accentDark1 = accent.WithBrightness(-0.07f);
+        var accentDark2 = accent.WithBrightness(-0.20f);
+        var accentDark3 = accent.WithBrightness(-0.35f);
 
 
         // update all accent-related resources
@@ -556,6 +867,21 @@ public static class Core
         Resx.Set(ResxId.SystemAccentColorDark1, accentDark1);
         Resx.Set(ResxId.SystemAccentColorDark2, accentDark2);
         Resx.Set(ResxId.SystemAccentColorDark3, accentDark3);
+
+        // accent-colored text: the raw accent is too dark on a dark background,
+        // so lighten it in dark mode and darken it in light mode for contrast
+        var textAccent = Core.Theme.Settings.IsDarkMode ? accentLight3 : accentDark1;
+        Resx.Set(ResxId.IG_TextAccentColor, textAccent);
+
+
+        // accent button text: pick black/white based on the accent brightness so
+        // it stays readable when the system accent is dark (fixes contrast issue)
+        var accentText = accent.InvertBlackOrWhite();
+        var accentTextBrush = accentText.ToBrush();
+        Resx.Set(ResxId.AccentButtonForeground, accentTextBrush);
+        Resx.Set(ResxId.AccentButtonForegroundPointerOver, accentTextBrush);
+        Resx.Set(ResxId.AccentButtonForegroundPressed, accentTextBrush);
+        Resx.Set(ResxId.AccentButtonForegroundDisabled, accentText.A(128).ToBrush());
 
 
         // border hover styles
@@ -615,10 +941,12 @@ public static class Core
 
         if (string.IsNullOrWhiteSpace(pathToLoad) && Core.Args.Length >= 2)
         {
-            // get path from params
+            // get path from params, skipping "-p:" config overrides and "--" flags
+            // (e.g. --ig-startup-trace) so a flag is never taken as the image path
             var cmdPath = Core.Args
                 .Skip(1)
-                .FirstOrDefault(i => !i.StartsWith(Const.CONFIG_CMD_PREFIX, StringComparison.Ordinal));
+                .FirstOrDefault(i => !i.StartsWith(Const.CONFIG_CMD_PREFIX, StringComparison.Ordinal)
+                    && !i.StartsWith("--", StringComparison.Ordinal));
 
             if (!string.IsNullOrEmpty(cmdPath))
             {
@@ -626,7 +954,8 @@ public static class Core
             }
         }
 
-        _initImagePathFromArgs = pathToLoad ?? string.Empty;
+        // store resolved: a shortcut's own folder must never pass as the folder being opened
+        _initImagePathFromArgs = BHelper.ResolvePath(pathToLoad);
     }
 
 
@@ -686,19 +1015,23 @@ public static class Core
     /// <summary>
     /// Updates the current destination color space.
     /// </summary>
-    public static void UpdateDestColorProfile()
+    /// <param name="requiresPhotoReload">
+    /// Pass <see langword="false"/> when the profile changed only because the window moved to
+    /// another monitor, so the on-screen photo is left alone instead of flashing through a reload.
+    /// </param>
+    public static void UpdateDestColorProfile(bool requiresPhotoReload = true)
     {
         var results = SkiaCodec.GetColorProfileByName(Core.Config.ColorProfile);
-
         Core.IsDestColorProfileSupported = results.IsSupported;
 
-        // no change
-        if (Core.DestColorProfile == results.ColorSpace) return;
+        // Codec selection depends on IsDestColorProfileSupported, so drop the cached winners
+        // (a codec chosen while Skia was ineligible must not stay stuck decoding).
+        Core.CodecRegistry.InvalidateSelectionCaches();
 
-        // color profile change
+        // apply the new profile and notify
         Core.DestColorProfile?.Dispose();
         Core.DestColorProfile = results.ColorSpace;
-        Core.OnColorProfileChanged();
+        Core.OnColorProfileChanged(requiresPhotoReload);
     }
 
 
@@ -708,7 +1041,7 @@ public static class Core
     public static async Task LoadClipboardPhotoAsync(Photo? photo)
     {
         if (API is null) return;
-        await API.LoadClipboardPhotoAsync(photo);
+        await AppAPIProvider.LoadClipboardPhotoAsync(photo);
     }
 
 
@@ -722,11 +1055,11 @@ public static class Core
     /// <summary>
     /// Raises ColorProfileChanged event on UI thread.
     /// </summary>
-    public static void OnColorProfileChanged()
+    public static void OnColorProfileChanged(bool requiresPhotoReload = true)
     {
         Dispatcher.UIThread.Post(() =>
         {
-            ColorProfileChanged?.Invoke(null, new());
+            ColorProfileChanged?.Invoke(null, new(requiresPhotoReload));
         });
 
         ToolRegistry.ExternalTools.BroadcastToAll(MessageTypes.COLOR_PROFILE_CHANGED);

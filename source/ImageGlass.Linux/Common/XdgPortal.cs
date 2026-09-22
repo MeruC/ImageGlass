@@ -16,6 +16,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
+using ImageGlass.Common;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -37,7 +38,8 @@ namespace ImageGlass.Linux.Common;
 /// <c>--filesystem=host</c> plus <c>--talk-name=org.freedesktop.FileManager1</c>, so
 /// the host backend can resolve the real paths. Trashing is handled separately
 /// (see <see cref="FreeDesktopTrash"/>) because the Trash portal is unreliable on
-/// some desktops; Email/Print portals are not used because they require FD passing.
+/// some desktops; the OpenURI, Email and Print portals are not used because they
+/// require FD passing for local files (see <see cref="OpenPath"/>).
 /// </remarks>
 internal static class XdgPortal
 {
@@ -62,16 +64,44 @@ internal static class XdgPortal
 
 
     /// <summary>
-    /// Opens a file or folder in its default handler via the OpenURI portal
-    /// (<c>org.freedesktop.portal.OpenURI.OpenURI</c>). The portal raises/focuses
-    /// the target window correctly under Wayland. Best-effort and non-blocking.
+    /// Opens a file or folder in its default handler with <c>xdg-open</c>, run on
+    /// the host when sandboxed. Best-effort and non-blocking.
     /// </summary>
+    /// <remarks>
+    /// The OpenURI portal cannot be used here: it answers <c>file://</c> URIs with
+    /// <c>Response(2)</c> (error) — local paths must go through <c>OpenFile</c> /
+    /// <c>OpenDirectory</c>, which take a file descriptor that <c>gdbus</c> cannot pass.
+    /// </remarks>
     public static void OpenPath(string path)
     {
-        Call(PORTAL_DEST, PORTAL_PATH, "org.freedesktop.portal.OpenURI.OpenURI",
-            "",     // parent_window
-            ToFileUri(path),
-            "{}");  // options
+        try
+        {
+            using var proc = new Process();
+            proc.StartInfo.FileName = "xdg-open";
+            proc.StartInfo.UseShellExecute = false;
+            proc.StartInfo.CreateNoWindow = true;
+            proc.StartInfo.ArgumentList.Add(BHelper.GetRealPlatformPath(Path.GetFullPath(path)));
+
+            // the sandbox's own xdg-open would just call the broken OpenURI portal
+            BHelper.ApplyFlatpakHostSpawn(proc.StartInfo);
+            proc.Start();
+        }
+        catch
+        {
+            // best-effort: xdg-open missing
+        }
+    }
+
+
+    /// <summary>
+    /// Opens <paramref name="dirPath"/> itself in the default file manager via
+    /// <c>org.freedesktop.FileManager1.ShowFolders</c>. Best-effort and non-blocking.
+    /// </summary>
+    public static void ShowFolders(string dirPath)
+    {
+        Call(FM_DEST, FM_PATH, "org.freedesktop.FileManager1.ShowFolders",
+            $"['{ToGVariantUri(dirPath)}']",    // URIs
+            "");                                // startup_id
     }
 
 
@@ -83,26 +113,33 @@ internal static class XdgPortal
     /// </summary>
     public static void ShowInFileManager(string filePath, bool showProperties = false)
     {
-        // FileManager1 takes an array of URIs, written here as GVariant text. Also
-        // percent-encode the apostrophe so a filename containing one cannot break
-        // out of the single-quoted GVariant string literal.
-        var uri = ToFileUri(filePath).Replace("'", "%27");
         var method = showProperties
             ? "org.freedesktop.FileManager1.ShowItemProperties"
             : "org.freedesktop.FileManager1.ShowItems";
 
         Call(FM_DEST, FM_PATH, method,
-            $"['{uri}']",   // URIs
-            "");            // startup_id
+            $"['{ToGVariantUri(filePath)}']",   // URIs
+            "");                                // startup_id
     }
 
 
     /// <summary>
-    /// Builds a percent-encoded <c>file://</c> URI for <paramref name="path"/>.
+    /// Builds a percent-encoded <c>file://</c> URI for <paramref name="path"/>, mapped to its host
+    /// location first because the backends run outside the sandbox.
     /// </summary>
     private static string ToFileUri(string path)
     {
-        return new Uri(Path.GetFullPath(path)).AbsoluteUri;
+        return new Uri(BHelper.GetRealPlatformPath(Path.GetFullPath(path))).AbsoluteUri;
+    }
+
+
+    /// <summary>
+    /// Like <see cref="ToFileUri"/>, but also percent-encodes the apostrophe so a name
+    /// containing one cannot break out of a single-quoted GVariant string literal.
+    /// </summary>
+    private static string ToGVariantUri(string path)
+    {
+        return ToFileUri(path).Replace("'", "%27");
     }
 
 

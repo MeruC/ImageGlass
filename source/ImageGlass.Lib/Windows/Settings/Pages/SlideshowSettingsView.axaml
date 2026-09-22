@@ -1,0 +1,77 @@
+<windows:SettingsPageView
+    x:Class="ImageGlass.Common.Windows.SlideshowSettingsView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="using:ImageGlass.UI"
+    xmlns:windows="using:ImageGlass.Common.Windows"
+    mc:Ignorable="d"
+    d:DesignWidth="600"
+    HorizontalAlignment="Stretch">
+
+    <StackPanel Orientation="Vertical">
+
+        <!--  Appearance  -->
+        <ui:PhTextBlock Classes="group" LangKey="Settings_Slideshow_Appearance" />
+        <StackPanel Margin="{DynamicResource SettingsGroupIndent}">
+            <CheckBox x:Name="PART_FullscreenSlideshow">
+                <ui:PhTextBlock LangKey="Settings_EnableFullscreenSlideshow" TextWrapping="Wrap" />
+            </CheckBox>
+            <CheckBox x:Name="PART_SlideshowCountdown">
+                <ui:PhTextBlock LangKey="Settings_EnableSlideshowCountdown" TextWrapping="Wrap" />
+            </CheckBox>
+
+            <!--  Slideshow Background  -->
+            <StackPanel Margin="0,10,0,0" Spacing="{DynamicResource SettingsLabelInputGap}">
+                <ui:PhTextBlock LangKey="Settings_SlideshowBackgroundColor" />
+                <ui:PhColorPickerControl x:Name="PART_BgColor" HorizontalAlignment="Left" />
+            </StackPanel>
+        </StackPanel>
+
+
+        <!--  Playback  -->
+        <ui:PhTextBlock Classes="group" LangKey="Settings_Slideshow_Playback" />
+        <StackPanel Margin="{DynamicResource SettingsGroupIndent}">
+            <CheckBox x:Name="PART_LoopSlideshow">
+                <ui:PhTextBlock LangKey="Settings_EnableLoopSlideshow" TextWrapping="Wrap" />
+            </CheckBox>
+            <CheckBox x:Name="PART_RandomInterval">
+                <ui:PhTextBlock LangKey="Settings_EnableSlideshowRandomInterval" TextWrapping="Wrap" />
+            </CheckBox>
+
+            <!--  Interval sub-group (heading shows the live from–to range)  -->
+            <TextBlock
+                x:Name="PART_IntervalHeading"
+                Classes="subgroup"
+                TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal" Spacing="14">
+                <StackPanel Spacing="{DynamicResource SettingsLabelInputGap}">
+                    <ui:PhTextBlock x:Name="PART_IntervalFromLabel" LangKey="Settings_SlideshowInterval_From" />
+                    <ui:PhTextBox
+                        x:Name="PART_SlideshowInterval"
+                        Width="150"
+                        AcceptValue="UnsignedFloatValueOnly" />
+                </StackPanel>
+                <StackPanel x:Name="PART_IntervalToSection" Spacing="{DynamicResource SettingsLabelInputGap}">
+                    <ui:PhTextBlock LangKey="Settings_SlideshowInterval_To" />
+                    <ui:PhTextBox
+                        x:Name="PART_SlideshowIntervalTo"
+                        Width="150"
+                        AcceptValue="UnsignedFloatValueOnly" />
+                </StackPanel>
+            </StackPanel>
+
+            <!--  Notification sound  -->
+            <StackPanel Margin="0,14,0,0" Spacing="{DynamicResource SettingsLabelInputGap}">
+                <ui:PhTextBlock LangKey="Settings_SlideshowImagesToNotifySound" TextWrapping="Wrap" />
+                <ui:PhTextBox
+                    x:Name="PART_NotifySound"
+                    Width="200"
+                    HorizontalAlignment="Left"
+                    AcceptValue="UnsignedIntValueOnly" />
+            </StackPanel>
+        </StackPanel>
+
+    </StackPanel>
+</windows:SettingsPageView>

@@ -60,4 +60,25 @@ public sealed class JsonStringEnumSafeConverter<TEnum> : JsonConverter<TEnum>
     {
         writer.WriteStringValue(value.ToString());
     }
+
+
+    /// <summary>
+    /// Reads the enum as a dictionary key, falling back to <c>default(TEnum)</c> on an unknown name.
+    /// </summary>
+    public override TEnum ReadAsPropertyName(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (Enum.TryParse<TEnum>(reader.GetString(), ignoreCase: true, out var named))
+            return named;
+
+        return default;
+    }
+
+
+    /// <summary>
+    /// Writes the enum as a dictionary key (its string name).
+    /// </summary>
+    public override void WriteAsPropertyName(Utf8JsonWriter writer, TEnum value, JsonSerializerOptions options)
+    {
+        writer.WritePropertyName(value.ToString());
+    }
 }

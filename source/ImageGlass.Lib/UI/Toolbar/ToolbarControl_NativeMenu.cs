@@ -35,10 +35,10 @@ public partial class ToolbarControl
     // they cannot be bar titles, so they are folded into the Layout menu
     private static readonly LangId[] _windowModeKeys =
     [
-        LangId.FrmMain_MnuWindowFit,
-        LangId.FrmMain_MnuFrameless,
-        LangId.FrmMain_MnuFullScreen,
-        LangId.FrmMain_MnuSlideshow,
+        LangId.Menu_MnuWindowFit,
+        LangId.Menu_MnuFrameless,
+        LangId.Menu_MnuFullScreen,
+        LangId.Menu_MnuSlideshow,
     ];
 
     // maps each native menu item back to its source PhMenuItem so state can be re-synced on open
@@ -74,7 +74,7 @@ public partial class ToolbarControl
             BuildNativeItems(submenu, item.Items);
 
             // fold the loose window-mode toggles into the Layout menu
-            if (item.LangKey == LangId.FrmMain_MnuLayout)
+            if (item.LangKey == LangId.Menu_MnuLayout)
             {
                 submenu.Add(new NativeMenuItemSeparator());
                 foreach (var key in _windowModeKeys)

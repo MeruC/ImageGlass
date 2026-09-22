@@ -1062,6 +1062,11 @@ public static class PhotoCodec
         // read all frames
         if (imgColl.Count > 1 && readFirstFrameOnly is false)
         {
+            // issue: https://github.com/dlemstra/Magick.NET/issues/2077
+            // ReadAsync() appends to the collection instead of replacing it
+            // so we need to manually clear
+            imgColl.Clear();
+
             await imgColl.ReadAsync(filePath, settings, cancelToken);
 
             var i = 0;
@@ -1458,6 +1463,7 @@ public static class PhotoCodec
             settings.SetDefines(new HeicReadDefines()
             {
                 MaxChildrenPerBox = 500,
+                MaxItems = 2000, // Issue https://github.com/d2phap/ImageGlass/issues/2354
             });
         }
         else if (ext.Equals(".JP2", StringComparison.OrdinalIgnoreCase))

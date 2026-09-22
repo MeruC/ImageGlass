@@ -27,6 +27,7 @@ internal static class CodecDecodeResultFactory
         {
             CodecId = codecId,
             Size = output.Size,
+            DecodeScale = output.DecodeScale,
             IsHdr = metadata.IsHdr,
             HasEmbeddedColorProfile = metadata.SkiaColorSpace is not null || metadata.MagickColorProfile is not null,
         };

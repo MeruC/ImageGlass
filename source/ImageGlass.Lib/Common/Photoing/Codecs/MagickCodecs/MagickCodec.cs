@@ -17,6 +17,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 using Cysharp.Collections;
+using ImageGlass.Common.Loggers;
 using ImageMagick;
 using ImageMagick.Formats;
 using SkiaSharp;
@@ -27,6 +28,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -109,6 +111,7 @@ public static partial class MagickCodec
             settings.SetDefines(new HeicReadDefines()
             {
                 MaxChildrenPerBox = 500,
+                MaxItems = 2000, // Issue https://github.com/d2phap/ImageGlass/issues/2354
             });
         }
         else if (ext.Equals(".JP2", StringComparison.OrdinalIgnoreCase))
@@ -357,6 +360,10 @@ public static partial class MagickCodec
                     meta.Height = meta.OriginalWidth;
                 }
 
+                // DPI: Convert units to inch
+                var density = imgC[frameIndex].Density;
+                meta.DpiX = density.X * 2.54d;
+                meta.DpiY = density.Y * 2.54d;
 
                 // image color
                 meta.HasAlpha = imgC.Any(i => i.HasAlpha);
@@ -364,6 +371,7 @@ public static partial class MagickCodec
 
                 // get RAW thumbnail
                 meta.RawThumbnail = imgC[frameIndex].GetProfile("dng:thumbnail");
+                ReadRawThumbnailSize__(meta);
             }
             catch { }
 
@@ -437,7 +445,7 @@ public static partial class MagickCodec
                     }
 
                     meta.MagickColorProfile = colorProfile;
-                    meta.SkiaColorSpace = SKColorSpace.CreateIcc(colorProfile.ToByteArray());
+                    meta.SkiaColorSpace = SkiaCodec.CreateIccColorSpace(colorProfile.ToReadOnlySpan());
                 }
             }
             catch { }
@@ -489,7 +497,32 @@ public static partial class MagickCodec
         if (options.FrameIndex < 0)
         {
             var imgColl = new MagickImageCollection();
-            await imgColl.ReadAsync(meta.FilePath, settings, cancelToken);
+            try
+            {
+                cancelToken.ThrowIfCancellationRequested();
+                await imgColl.ReadAsync(meta.FilePath, settings, cancelToken).ConfigureAwait(false);
+                cancelToken.ThrowIfCancellationRequested();
+            }
+            catch (Exception ex)
+            {
+                imgColl.Dispose();
+                cancelToken.ThrowIfCancellationRequested();
+                if (!CanRetryContentRead__(ex, settings, meta.FilePath)) throw;
+
+                try
+                {
+                    imgColl = new MagickImageCollection();
+                    using var stream = File.OpenRead(meta.FilePath);
+                    await imgColl.ReadAsync(stream, settings, cancelToken).ConfigureAwait(false);
+                    cancelToken.ThrowIfCancellationRequested();
+                }
+                catch (Exception)
+                {
+                    imgColl.Dispose();
+                    cancelToken.ThrowIfCancellationRequested();
+                    ExceptionDispatchInfo.Capture(ex).Throw();
+                }
+            }
 
             var i = 0;
             foreach (var imgFrameM in imgColl)
@@ -520,24 +553,25 @@ public static partial class MagickCodec
         {
             try
             {
-                // try to get thumbnail
-                if (meta.RawThumbnail != null)
+                // the size came from the metadata ping, so no Ping-then-Read on this instance
+                if (meta.RawThumbnail != null
+                    && meta.IsEmbeddedPreviewLargeEnough(options.PreviewMinWidth, options.PreviewMinHeight))
                 {
-                    var thumbSpan = meta.RawThumbnail.ToReadOnlySpan();
-
-                    imgM.Dispose();
-                    imgM.Ping(thumbSpan);
-
-                    // check min size
-                    if (imgM.Width > options.PreviewMinWidth
-                        && imgM.Height > options.PreviewMinHeight)
-                    {
-                        imgM.Read(thumbSpan, settings);
-                        hasRequestedThumbnail = true;
-                    }
+                    imgM.Read(meta.RawThumbnail.ToReadOnlySpan(), GetPreviewReadSettings__(options, settings));
+                    hasRequestedThumbnail = true;
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                PhotoTrace.Mark("decode:raw-preview-failed", meta.FilePath, ex.Message);
+            }
+
+            if (!hasRequestedThumbnail)
+            {
+                PhotoTrace.Mark("decode:raw-preview-rejected", meta.FilePath,
+                    $"preview={meta.PreviewWidth}x{meta.PreviewHeight}, "
+                    + $"min={options.PreviewMinWidth}x{options.PreviewMinHeight} -> full decode");
+            }
         }
 
 
@@ -545,7 +579,32 @@ public static partial class MagickCodec
         if (!hasRequestedThumbnail)
         {
             imgM.Dispose();
-            await imgM.ReadAsync(meta.FilePath, settings, cancelToken);
+            try
+            {
+                cancelToken.ThrowIfCancellationRequested();
+                await imgM.ReadAsync(meta.FilePath, settings, cancelToken).ConfigureAwait(false);
+                cancelToken.ThrowIfCancellationRequested();
+            }
+            catch (Exception ex)
+            {
+                imgM.Dispose();
+                cancelToken.ThrowIfCancellationRequested();
+                if (!CanRetryContentRead__(ex, settings, meta.FilePath)) throw;
+
+                try
+                {
+                    imgM = new MagickImage();
+                    using var stream = File.OpenRead(meta.FilePath);
+                    await imgM.ReadAsync(stream, settings, cancelToken).ConfigureAwait(false);
+                    cancelToken.ThrowIfCancellationRequested();
+                }
+                catch (Exception)
+                {
+                    imgM.Dispose();
+                    cancelToken.ThrowIfCancellationRequested();
+                    ExceptionDispatchInfo.Capture(ex).Throw();
+                }
+            }
         }
 
 
@@ -592,24 +651,86 @@ public static partial class MagickCodec
         };
         var settings = ParseSettings(options, false, filePath);
 
+        // ping a throwaway image: reading into a pinged instance double-frees on teardown
         try
         {
-            var imgM = new MagickImage();
-            imgM.Ping(filePath, settings);
+            using var probeM = new MagickImage();
+            probeM.Ping(filePath, settings);
 
             // check the dimention constraint
-            if (imgM.Width < minSize
-                || imgM.Height < minSize
-                || imgM.Width > maxSize
-                || imgM.Height > maxSize) return null;
+            if (probeM.Width < minSize
+                || probeM.Height < minSize
+                || probeM.Width > maxSize
+                || probeM.Height > maxSize) return null;
+        }
+        catch { return null; }
 
-            await imgM.ReadAsync(filePath, settings, token);
+        if (token.IsCancellationRequested) return null;
+
+
+        var imgM = new MagickImage();
+        try
+        {
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                await imgM.ReadAsync(filePath, settings, token).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                imgM.Dispose();
+                token.ThrowIfCancellationRequested();
+                if (!CanRetryContentRead__(ex, settings, filePath)) throw;
+
+                imgM = new MagickImage();
+                using var stream = File.OpenRead(filePath);
+                await imgM.ReadAsync(stream, settings, token).ConfigureAwait(false);
+            }
+            token.ThrowIfCancellationRequested();
 
             return imgM;
         }
-        catch { }
+        catch
+        {
+            imgM.Dispose();
+            return null;
+        }
+    }
 
-        return null;
+
+    /// <summary>
+    /// Allows a content-based retry for decoder errors when the filename supplied a format hint.
+    /// </summary>
+    private static bool CanRetryContentRead__(Exception error, MagickReadSettings settings, string filePath)
+    {
+        if (settings.Format != MagickFormat.Unknown
+            || error is not (MagickCorruptImageErrorException or MagickCoderErrorException)) return false;
+
+        // Keep rejected RAW containers on their original decoder instead of falling back to TIFF.
+        var extFormatInfo = MagickFormatInfo.Create(filePath);
+        if (extFormatInfo is null || extFormatInfo.ModuleFormat == MagickFormat.Dng)
+        {
+            return false;
+        }
+
+        var pending = new Stack<Exception>();
+        var visited = new HashSet<Exception>(ReferenceEqualityComparer.Instance);
+        pending.Push(error);
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            if (!visited.Add(current)) continue;
+            if (current is not (MagickCorruptImageErrorException
+                or MagickCoderErrorException or MagickWarningException)) return false;
+
+            if (current is MagickException magickError)
+            {
+                foreach (var related in magickError.RelatedExceptions) pending.Push(related);
+            }
+            if (current.InnerException is { } inner) pending.Push(inner);
+        }
+
+        return true;
     }
 
 
@@ -768,17 +889,28 @@ public static partial class MagickCodec
             if (result.MultiFrames is not null)
             {
                 // convert GIF to non-GIF formats, we need to coalesce all frames
-                if (meta.FileExtension.Equals(".gif", StringComparison.OrdinalIgnoreCase)
+                if (result.MultiFrames.Count > 0
+                    && result.MultiFrames[0].Format == MagickFormat.Gif
                     && !destExt.Equals(".gif", StringComparison.OrdinalIgnoreCase))
                 {
                     result.MultiFrames.Coalesce();
+                }
+
+                // ParseSettings can inherit TIFF layer output from an incorrect source extension.
+                if (result.MultiFrames.Count > 0
+                    && MagickFormatInfo.Create(result.MultiFrames[0].Format)?.ModuleFormat != MagickFormat.Tiff)
+                {
+                    foreach (var imgM in result.MultiFrames)
+                    {
+                        imgM.Settings.RemoveDefine(MagickFormat.Tiff, "write-layers");
+                    }
                 }
 
                 await result.MultiFrames.WriteAsync(destFilePath, token);
             }
             else if (result.SingleFrame is not null)
             {
-                result.SingleFrame.Quality = quality;
+                result.SingleFrame.Quality = ResolveHdrSafeQuality__(meta, destExt, quality);
 
                 // resize ICO file if it's larger than 256
                 if (destExt.Equals(".ICO", StringComparison.OrdinalIgnoreCase))
@@ -802,17 +934,35 @@ public static partial class MagickCodec
 
 
     /// <summary>
+    /// Keeps an HDR image out of an encoder path that would discard its color encoding.
+    /// </summary>
+    private static uint ResolveHdrSafeQuality__(PhotoMetadata meta, string destExt, uint quality)
+    {
+        if (!meta.IsHdr || quality >= 100) return quality;
+
+        // Measured: below 100 the JXL writer drops uses_original_profile, replacing the source
+        // profile with a synthesized sRGB one, and no jxl: define overrides it. Other formats keep it.
+        return destExt.Equals(".JXL", StringComparison.OrdinalIgnoreCase) ? 100 : quality;
+    }
+
+
+    /// <summary>
     /// Exports image frames to files, using Magick.NET
     /// </summary>
     /// <param name="srcFilePath">The full path of source file</param>
     /// <param name="destFolder">The destination folder to save to</param>
-    public static async IAsyncEnumerable<(int FrameNumber, int FrameCount, string FileName)> SaveFramesAsync(string srcFilePath,
-        string destFolder, [EnumeratorCancellation] CancellationToken token = default)
+    public static async IAsyncEnumerable<(int FrameNumber, int FrameCount, string FileName)> SaveFramesAsync(string srcFilePath, string destFolder, [EnumeratorCancellation] CancellationToken token = default)
     {
         // create dirs unless it does not exist
         Directory.CreateDirectory(destFolder);
 
-        using var imgColl = new MagickImageCollection(srcFilePath);
+        // create settings to decode all frames
+        var settings = ParseSettings(new PhotoReadOptions()
+        {
+            FrameIndex = -1,
+        }, false, srcFilePath);
+
+        using var imgColl = new MagickImageCollection(srcFilePath, settings);
         var frameCount = imgColl.Count;
         var index = 0;
 
@@ -928,6 +1078,24 @@ public static partial class MagickCodec
             else if (meta.MagickColorProfile is { } metaIcc)
             {
                 icc = metaIcc.ToReadOnlySpan();
+            }
+
+            // 3a. the profile's own cicp tag, which is exact where the text scan below only guesses
+            if (icc.Length > 0 && ParseCicpFromIcc(icc) is (var iccPrimaries, var iccTransfer))
+            {
+                if (iccTransfer == 16)
+                {
+                    meta.HdrTransferFn = HdrTransferFunction.PQ;
+                }
+                else if (iccTransfer == 18)
+                {
+                    meta.HdrTransferFn = HdrTransferFunction.HLG;
+                }
+
+                if (!meta.IsWideGamut && iccPrimaries is 9 or 11 or 12)
+                {
+                    meta.IsWideGamut = true;
+                }
             }
 
             if (icc.Length > 0)
@@ -1070,6 +1238,29 @@ public static partial class MagickCodec
         {
             meta.IsWideGamut = true;
         }
+
+        // 10. HDR10 content peak, which the tone curve uses as its white level instead of guessing
+        if (meta.IsHdr && meta.HdrTransferFn != HdrTransferFunction.GainMap)
+        {
+            meta.ContentPeakNits = DetectContentPeakNits(meta);
+        }
+    }
+
+
+    /// <summary>
+    /// Reads the declared peak content luminance in nits, preferring the container's own HDR10
+    /// metadata over the EXIF copy. Returns <c>0</c> when the file declares none.
+    /// </summary>
+    private static double DetectContentPeakNits(PhotoMetadata meta)
+    {
+        var peak = meta.FileExtension switch
+        {
+            ".avif" or ".heif" or ".heic" or ".hif" => ParseContentPeakFromIsobmff(meta.FilePath),
+            ".png" => ParseContentPeakFromPng(meta.FilePath),
+            _ => null,
+        };
+
+        return peak ?? 0d;
     }
 
 
@@ -1115,11 +1306,15 @@ public static partial class MagickCodec
 
         var w = (int)imgM.Width;
         var h = (int)imgM.Height;
-        var pixelCount = w * h;
+        var pixelCount = (long)w * h;
+        var byteCount = pixelCount * 4 * sizeof(float);
+
+        // callers shrink oversized images first; refuse rather than overflow if that was skipped
+        if (pixelCount <= 0 || byteCount > int.MaxValue) return null;
 
         // Derive source channel count from the actual array size.
         // EXR files may have extra channels (depth, normals, etc.) beyond RGB(A).
-        var srcChannels = area.Length / pixelCount;
+        var srcChannels = (int)(area.Length / pixelCount);
 
         // Discover actual channel positions in Magick's internal order.
         var chR = (int)(pixels.GetChannelIndex(PixelChannel.Red) ?? 0);
@@ -1127,8 +1322,7 @@ public static partial class MagickCodec
         var chB = (int)(pixels.GetChannelIndex(PixelChannel.Blue) ?? 2);
         var chA = hasAlpha ? (int)(pixels.GetChannelIndex(PixelChannel.Alpha) ?? 0u) : -1;
 
-        var floatCount = pixelCount * 4; // always RGBA for Skia
-        var nativeBuffer = new NativeMemoryArray<byte>(floatCount * sizeof(float), skipZeroClear: true, addMemoryPressure: true);
+        var nativeBuffer = new NativeMemoryArray<byte>(byteCount, skipZeroClear: true, addMemoryPressure: true);
         var dst = MemoryMarshal.Cast<byte, float>(nativeBuffer.AsSpan());
 
         const float quantumScale = 1f / 65535f;

@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <?include Variables.wxi ?>
+
+  <!--
+    ImageGlass 10 installer, x64, dual scope (per-user or per-machine chosen at install time).
+    Built by __assets/win/script-pack-win-msi.ps1, which supplies every $(var.*) below.
+  -->
+  <Package
+      Name="$(var.IgProductName)"
+      Manufacturer="$(var.IgManufacturer)"
+      Version="$(var.ProductVersion)"
+      UpgradeCode="$(var.IgUpgradeCode)"
+      ProductCode="$(var.ProductCode)"
+      Language="1033"
+      Scope="perUserOrMachine"
+      InstallerVersion="500"
+      Compressed="yes">
+
+    <!-- InstallerVersion 500 is needed twice over: dual-scope packaging and the Hyperlink control. -->
+    <!-- IgProductName already carries the version, so do not append it again here. -->
+    <SummaryInformation Description="$(var.IgProductName) (x64) Setup"
+                        Keywords="Installer,ImageGlass,Photo viewer" />
+
+    <MediaTemplate EmbedCab="yes" CompressionLevel="$(var.Cabinet)" />
+
+    <UIRef Id="IgWixUI" />
+
+    <!-- ==== Upgrades ==================================================================== -->
+    <!-- AllowSameVersionUpgrades is required: MSI compares only the first three ProductVersion
+         fields, so two builds differing only in the 4th would never upgrade without it. -->
+    <MajorUpgrade
+        Schedule="afterInstallValidate"
+        AllowDowngrades="no"
+        AllowSameVersionUpgrades="yes"
+        DowngradeErrorMessage="!(loc.IgNewerVersionInstalled)" />
+
+    <!-- IgnoreRemoveFailure is mandatory: a per-user v10 cannot remove a per-machine v9, and
+         without it that failure rolls the whole install back. -->
+    <Upgrade Id="$(var.Ig9UpgradeCode)">
+      <UpgradeVersion
+          Minimum="0.0.0"  IncludeMinimum="yes"
+          Maximum="10.0.0" IncludeMaximum="no"
+          Property="IGV9INSTALLED"
+          MigrateFeatures="no"
+          OnlyDetect="no"
+          IgnoreRemoveFailure="yes" />
+    </Upgrade>
+
+    <!-- ==== Public properties (admin-settable on the msiexec command line) =============== -->
+    <!-- ALLUSERS=2 and MSIINSTALLPERUSER=1 are emitted automatically by Scope="perUserOrMachine". -->
+
+    <!-- No Value on purpose: this row exists only to put INSTALLFOLDER in SecureCustomProperties. -->
+    <Property Id="INSTALLFOLDER" Secure="yes" />
+
+    <Property Id="IGDESKTOPSHORTCUT"   Value="1" Secure="yes" />
+    <Property Id="IGSTARTMENUSHORTCUT" Value="1" Secure="yes" />
+    <Property Id="IGREMOVEFILEASSOC"   Value="1" Secure="yes" />
+    <Property Id="IGAGREETOTERMS"                Secure="yes" />
+
+    <!-- Ticks the "Launch ImageGlass" box on the complete screen; UI only, ignored by /qn. -->
+    <Property Id="IGLAUNCHAFTERINSTALL" Value="1" Secure="yes" />
+
+    <!-- ==== UI-internal properties ====================================================== -->
+    <Property Id="IGINSTALLSCOPE"   Value="perUser" />
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+
+    <!-- [ProgramFiles64Folder] has already resolved per-user by dialog time, so read the real
+         path instead. RegistrySearch is AppSearch, not the Registry table, so ICE105 stays clean. -->
+    <Property Id="IGPROGRAMFILES64" Secure="yes">
+      <RegistrySearch Id="SearchProgramFiles64" Root="HKLM"
+                      Key="SOFTWARE\Microsoft\Windows\CurrentVersion"
+                      Name="ProgramFilesDir" Type="raw" Bitness="always64" />
+    </Property>
+
+    <!-- ==== The install being replaced ================================================== -->
+    <!-- Windows Installer cannot move a product between per-user and per-machine, so an upgrade
+         only succeeds when it runs in the same scope as the install it replaces. -->
+
+    <!-- Scope is whichever hive the HKMU marker landed in. InstallLocation is written below;
+         the two shortcut values are the only trace an earlier release left, so they count too. -->
+    <Property Id="IGPREVMACHINEDIR" Secure="yes">
+      <RegistrySearch Id="PrevMachineDir" Root="HKLM" Key="$(var.IgSetupRegKey)"
+                      Name="InstallLocation" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="IGPREVMACHINESM" Secure="yes">
+      <RegistrySearch Id="PrevMachineSm" Root="HKLM" Key="$(var.IgSetupRegKey)"
+                      Name="StartMenuShortcut" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="IGPREVMACHINEDT" Secure="yes">
+      <RegistrySearch Id="PrevMachineDt" Root="HKLM" Key="$(var.IgSetupRegKey)"
+                      Name="DesktopShortcut" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="IGPREVUSERDIR" Secure="yes">
+      <RegistrySearch Id="PrevUserDir" Root="HKCU" Key="$(var.IgSetupRegKey)"
+                      Name="InstallLocation" Type="raw" />
+    </Property>
+    <Property Id="IGPREVUSERSM" Secure="yes">
+      <RegistrySearch Id="PrevUserSm" Root="HKCU" Key="$(var.IgSetupRegKey)"
+                      Name="StartMenuShortcut" Type="raw" />
+    </Property>
+    <Property Id="IGPREVUSERDT" Secure="yes">
+      <RegistrySearch Id="PrevUserDt" Root="HKCU" Key="$(var.IgSetupRegKey)"
+                      Name="DesktopShortcut" Type="raw" />
+    </Property>
+
+    <!-- MSI ignores the fourth version field, so the build number is compared from here instead. -->
+    <Property Id="IGPREVMACHINEBUILD" Secure="yes">
+      <RegistrySearch Id="PrevMachineBuild" Root="HKLM" Key="$(var.IgSetupRegKey)"
+                      Name="InstalledBuild" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="IGPREVUSERBUILD" Secure="yes">
+      <RegistrySearch Id="PrevUserBuild" Root="HKCU" Key="$(var.IgSetupRegKey)"
+                      Name="InstalledBuild" Type="raw" />
+    </Property>
+
+    <!-- An HKLM ARP row is the only proof that 10.0.5.825 was the "All users" install it claimed. -->
+    <Property Id="IGBROKENSCOPEARP" Secure="yes">
+      <RegistrySearch Id="BrokenScopeArp" Root="HKLM" Type="raw" Bitness="always64"
+                      Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{$(var.IgBrokenScopeProductCode)}"
+                      Name="DisplayName" />
+    </Property>
+
+    <!-- ImageGlass 9 recorded its scope the same way, under its own vendor key. -->
+    <Property Id="IGPREV9MACHINE" Secure="yes">
+      <RegistrySearch Id="Prev9Machine" Root="HKLM" Key="$(var.Ig9SetupRegKey)"
+                      Name="AI_INSTALLPERUSER" Type="raw" Bitness="always64" />
+    </Property>
+
+    <!-- Recomputed per sequence rather than carried over from the UI, so a silent install
+         resolves alike; chained because two SetProperty rows cannot share an After= anchor. -->
+    <SetProperty Id="IGPREVPERMACHINE" Value="1" After="AppSearch" Sequence="both"
+                 Condition="IGPREVMACHINEDIR OR IGPREVMACHINESM OR IGPREVMACHINEDT" />
+    <SetProperty Id="IGPREVPERUSER" Value="1" After="SetIGPREVPERMACHINE" Sequence="both"
+                 Condition="IGPREVUSERDIR OR IGPREVUSERSM OR IGPREVUSERDT" />
+    <!-- Paired with FindRelatedProducts so a key left behind by an uninstalled ImageGlass 9
+         cannot force an elevated install for nothing. -->
+    <SetProperty Id="IGPREV9PERMACHINE" Value="1" After="SetIGPREVPERUSER" Sequence="both"
+                 Condition="IGV9INSTALLED AND IGPREV9MACHINE" />
+    <!-- Paired with the HKCU marker, so removing that install clears the block with it. -->
+    <SetProperty Id="IGBROKENSCOPE" Value="1" After="SetIGPREV9PERMACHINE" Sequence="both"
+                 Condition="IGBROKENSCOPEARP AND IGPREVUSERDIR" />
+    <!-- Whichever hive the marker landed in; only one of the two is ever present. -->
+    <SetProperty Id="IGPREVBUILD" Action="SetIgPrevBuildFromMachine" Value="[IGPREVMACHINEBUILD]"
+                 After="SetIGBROKENSCOPE" Sequence="both" Condition="IGPREVMACHINEBUILD" />
+    <SetProperty Id="IGPREVBUILD" Action="SetIgPrevBuildFromUser" Value="[IGPREVUSERBUILD]"
+                 After="SetIgPrevBuildFromMachine" Sequence="both"
+                 Condition="IGPREVUSERBUILD AND NOT IGPREVMACHINEBUILD" />
+
+    <!-- Refused rather than auto-corrected, because a late ALLUSERS flip cannot undo the
+         directory redirection already applied. See README, "Upgrading an existing install". -->
+    <CustomAction Id="IgBlockPerUserOverMachine" Error="!(loc.IgScopeMismatchMachine)" />
+    <CustomAction Id="IgBlockPerMachineOverUser" Error="!(loc.IgScopeMismatchUser)" />
+    <!-- Reachable from the wizard too, so unlike those two they are sequenced in both sequences. -->
+    <CustomAction Id="IgBlockBrokenScope" Error="!(loc.IgScopeBrokenLegacy)" />
+    <!-- MajorUpgrade's own downgrade guard cannot see this: it compares three fields. -->
+    <CustomAction Id="IgBlockOlderBuild" Error="!(loc.IgNewerVersionInstalled)" />
+
+    <InstallUISequence>
+      <Custom Action="IgBlockOlderBuild" After="SetIgPrevBuildFromUser"
+              Condition="NOT Installed AND IGPREVBUILD AND IGPREVBUILD &gt; $(var.BuildNumber)" />
+      <Custom Action="IgBlockBrokenScope" After="IgBlockOlderBuild"
+              Condition="NOT Installed AND IGBROKENSCOPE" />
+      <!-- Behind the scope pre-set: it skips any related product in another context. -->
+      <FindRelatedProducts After="SetIgAllUsersFromPrev" />
+    </InstallUISequence>
+
+    <!-- Preselect the scope already in use. The dialog locks the choice for a previous
+         ImageGlass 10, and leaves it changeable for ImageGlass 9, whose removal is best-effort. -->
+    <SetProperty Id="IGINSTALLSCOPE" Value="perMachine" After="IgBlockBrokenScope" Sequence="ui"
+                 Condition="IGPREVPERMACHINE OR IGPREV9PERMACHINE" />
+
+    <!-- Matches it, so FindRelatedProducts sees the install being replaced; Next re-publishes it. -->
+    <SetProperty Id="ALLUSERS" Action="SetIgAllUsersFromPrev" Value="1" After="SetIGINSTALLSCOPE"
+                 Sequence="ui" Condition="IGPREVPERMACHINE OR IGPREV9PERMACHINE" />
+
+    <!-- Not a ComponentSearch: Type="directory" needs a directory key path, and the exe's is a file. -->
+    <SetProperty Id="IGPREVDIR" Action="SetIgPrevDirFromMachine" Value="[IGPREVMACHINEDIR]"
+                 After="FindRelatedProducts" Sequence="ui" Condition="IGPREVMACHINEDIR" />
+    <SetProperty Id="IGPREVDIR" Action="SetIgPrevDirFromUser" Value="[IGPREVUSERDIR]"
+                 After="SetIgPrevDirFromMachine" Sequence="ui"
+                 Condition="IGPREVUSERDIR AND NOT IGPREVMACHINEDIR" />
+
+    <!-- Both path editors need a non-empty initial value before their dialog is created; the
+         previous folder seeds them first, so an upgrade lands on a custom path rather than beside it. -->
+    <SetProperty Id="IGFOLDERPERUSER" Action="SetIgFolderPerUserFromPrev" Value="[IGPREVDIR]"
+                 After="CostFinalize" Sequence="ui"
+                 Condition="IGPREVDIR AND IGPREVPERUSER AND NOT IGPREVPERMACHINE" />
+    <SetProperty Id="IGFOLDERPERMACHINE" Action="SetIgFolderPerMachineFromPrev" Value="[IGPREVDIR]"
+                 After="SetIgFolderPerUserFromPrev" Sequence="ui"
+                 Condition="IGPREVDIR AND IGPREVPERMACHINE" />
+    <SetProperty Id="IGFOLDERPERUSER"
+                 Value="[LocalAppDataFolder]Programs\$(var.IgFolderName)\"
+                 After="SetIgFolderPerMachineFromPrev" Sequence="ui" Condition="NOT IGFOLDERPERUSER" />
+    <SetProperty Id="IGFOLDERPERMACHINE"
+                 Value="[IGPROGRAMFILES64]\$(var.IgFolderName)\"
+                 After="SetIGFOLDERPERUSER" Sequence="ui" Condition="NOT IGFOLDERPERMACHINE" />
+
+    <!-- ==== Add/Remove Programs ========================================================= -->
+    <!-- sys.SOURCEFILEDIR, not a bare relative path: wix resolves those against the CWD. -->
+    <Icon Id="ImageGlassIcon"
+          SourceFile="$(sys.SOURCEFILEDIR)..\..\..\ImageGlass.Win32\icon256.ico" />
+
+    <Property Id="ARPPRODUCTICON"   Value="ImageGlassIcon" />
+    <Property Id="ARPCONTACT"       Value="phap@imageglass.org" />
+    <Property Id="ARPHELPLINK"      Value="https://imageglass.org/support" />
+    <Property Id="ARPURLINFOABOUT"  Value="https://imageglass.org" />
+    <Property Id="ARPURLUPDATEINFO" Value="https://imageglass.org/download" />
+    <Property Id="ARPCOMMENTS"      Value="A Fast, Seamless Photo Viewer" />
+
+    <!-- One feature only, so Change would be a dead end; Repair still works from a re-run. -->
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <!-- Skip the System Restore point on a ~107 MB install; v9 shipped the same value. -->
+    <Property Id="MSIFASTINSTALL" Value="3" />
+
+    <SetProperty Id="ARPINSTALLLOCATION" Value="[INSTALLFOLDER]"
+                 After="CostFinalize" Sequence="execute" />
+
+    <!-- ==== Layout ====================================================================== -->
+    <!-- MSI resolves this per context at CostFinalize, so silent installs get the right
+         default free: %ProgramFiles%\ImageGlass, or %LocalAppData%\Programs\ImageGlass per-user. -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="$(var.IgFolderName)" />
+    </StandardDirectory>
+
+    <Feature Id="MainFeature" Title="!(loc.IgFeatureMainTitle)" Level="1" AllowAbsent="no">
+      <ComponentGroupRef Id="IgAppFiles" />
+      <ComponentRef Id="CmpStartMenuShortcut" />
+      <ComponentRef Id="CmpDesktopShortcut" />
+    </Feature>
+
+    <!-- ==== Uninstall cleanup =========================================================== -->
+    <!-- ExeCommand must stay byte-identical to AppCmds.REMOVE_DEFAULT_PHOTO_VIEWER: the app
+         matches args[0] case-sensitively, and drift turns this into a GUI launch as SYSTEM. -->
+    <!-- Impersonate=no keeps it UAC-free: MSI ignores NoImpersonate when unelevated, so this is
+         SYSTEM/HKLM per-machine and the real user/HKCU per-user. -->
+    <CustomAction Id="IgRemoveDefaultViewer"
+                  FileRef="FileImageGlassExe"
+                  ExeCommand="--ig-remove-default-viewer"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <!-- Ahead of costing and RemoveExistingProducts, so a refusal changes nothing. NOT ALLUSERS
+           is how per-user reads by here, the switching pair having already been collapsed. -->
+      <Custom Action="IgBlockOlderBuild" After="SetIgPrevBuildFromUser"
+              Condition="NOT Installed AND IGPREVBUILD AND IGPREVBUILD &gt; $(var.BuildNumber)" />
+      <Custom Action="IgBlockBrokenScope" After="IgBlockOlderBuild"
+              Condition="NOT Installed AND IGBROKENSCOPE" />
+      <Custom Action="IgBlockPerUserOverMachine" After="IgBlockBrokenScope"
+              Condition="NOT Installed AND IGPREVPERMACHINE AND NOT ALLUSERS" />
+      <Custom Action="IgBlockPerMachineOverUser" After="IgBlockPerUserOverMachine"
+              Condition="NOT Installed AND IGPREVPERUSER AND NOT IGPREVPERMACHINE AND ALLUSERS" />
+      <!-- Before RemoveFiles so the exe still exists. NOT UPGRADINGPRODUCTCODE is critical, or
+           every major upgrade would strip the associations via RemoveExistingProducts. -->
+      <Custom Action="IgRemoveDefaultViewer" Before="RemoveFiles"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE AND IGREMOVEFILEASSOC=&quot;1&quot;" />
+    </InstallExecuteSequence>
+  </Package>
+
+  <!-- ==== Payload ======================================================================= -->
+  <Fragment>
+    <ComponentGroup Id="IgAppFiles" Directory="INSTALLFOLDER">
+
+      <!-- Hand-authored because the uninstall CustomAction needs it as a FileRef target. -->
+      <Component Id="CmpImageGlassExe" Guid="$(var.IgExeComponentGuid)">
+        <File Id="FileImageGlassExe" Source="$(var.PayloadDir)\ImageGlass.exe"
+              Name="ImageGlass.exe" KeyPath="yes" />
+        <!-- Rides the exe's version because its own went backwards once; see README. -->
+        <File Id="FileMagickNative" Source="$(var.PayloadDir)\$(var.IgMagickNativeFile)"
+              Name="$(var.IgMagickNativeFile)" CompanionFile="FileImageGlassExe" />
+      </Component>
+
+      <!-- Unconditional, unlike the shortcut markers, so the next upgrade can still tell which
+           scope to reuse when the user declined both. HKMU redirects it per install context. -->
+      <Component Id="CmpInstallInfo" Guid="DB85ED25-70C2-494B-91F7-9F137447CD58">
+        <RegistryValue Root="HKMU" Key="$(var.IgSetupRegKey)" Name="InstallLocation"
+                       Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+        <!-- String, not integer: a raw RegistrySearch would read a DWORD back as "#906". -->
+        <RegistryValue Root="HKMU" Key="$(var.IgSetupRegKey)" Name="InstalledBuild"
+                       Type="string" Value="$(var.BuildNumber)" />
+      </Component>
+
+      <!-- Flat layout is load-bearing: native DLLs, default.webp and the _-folders all resolve
+           via BHelper.BaseDir(). _store is pruned by the packer; Files throws on absent dirs. -->
+      <Files Include="$(var.PayloadDir)\**">
+        <Exclude Files="$(var.PayloadDir)\ImageGlass.exe" />
+        <Exclude Files="$(var.PayloadDir)\$(var.IgMagickNativeFile)" />
+        <Exclude Files="**\*.pdb" />
+        <Exclude Files="**\.igportable" />
+      </Files>
+    </ComponentGroup>
+  </Fragment>
+
+  <!-- ==== Shortcuts ===================================================================== -->
+  <Fragment>
+    <!-- HKMU keypaths: it redirects per install context, HKCU would be wrong per-machine, and
+         HKLM fails ICE105 in a dual-scope package. -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="CmpStartMenuShortcut" Guid="C240ECE0-F4CA-493D-828D-8F550001120A"
+                 Condition="IGSTARTMENUSHORTCUT = &quot;1&quot;">
+        <Shortcut Id="ScStartMenu" Name="!(loc.IgShortcutName)"
+                  Description="!(loc.IgShortcutDescription)"
+                  Target="[INSTALLFOLDER]ImageGlass.exe" WorkingDirectory="INSTALLFOLDER"
+                  Advertise="no" />
+        <RegistryValue Root="HKMU" Key="$(var.IgSetupRegKey)" Name="StartMenuShortcut"
+                       Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <StandardDirectory Id="DesktopFolder">
+      <Component Id="CmpDesktopShortcut" Guid="806BC8D3-9812-4845-B478-A74C337A50CA"
+                 Condition="IGDESKTOPSHORTCUT = &quot;1&quot;">
+        <Shortcut Id="ScDesktop" Name="!(loc.IgShortcutName)"
+                  Description="!(loc.IgShortcutDescription)"
+                  Target="[INSTALLFOLDER]ImageGlass.exe" WorkingDirectory="INSTALLFOLDER"
+                  Advertise="no" />
+        <RegistryValue Root="HKMU" Key="$(var.IgSetupRegKey)" Name="DesktopShortcut"
+                       Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+  </Fragment>
+</Wix>

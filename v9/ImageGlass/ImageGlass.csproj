@@ -15,7 +15,7 @@
         <Description>A lightweight, versatile image viewer</Description>
         <Copyright>Copyright © 2010 - 2026 Duong Dieu Phap</Copyright>
         <Company>Duong Dieu Phap</Company>
-        <Version>9.5.0.515</Version>
+        <Version>9.6.1.807</Version>
         <FileVersion>$(Version)</FileVersion>
 
         <EntryPointExe>$(AssemblyName).exe</EntryPointExe>
@@ -177,7 +177,7 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
         <PackageReference Include="ImageGlass.Tools" Version="1.9200.2" />
-        <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15">
+        <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="18.7.23">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>

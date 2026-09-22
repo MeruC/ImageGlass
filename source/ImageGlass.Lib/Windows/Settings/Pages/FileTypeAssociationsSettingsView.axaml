@@ -1,0 +1,160 @@
+<windows:SettingsPageView
+    x:Class="ImageGlass.Common.Windows.FileTypeAssociationsSettingsView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="using:ImageGlass.UI"
+    xmlns:windows="using:ImageGlass.Common.Windows"
+    mc:Ignorable="d"
+    d:DesignWidth="600"
+    HorizontalAlignment="Stretch">
+
+    <StackPanel Orientation="Vertical">
+
+        <!--  File extension icons (Windows only)  -->
+        <ui:PhTextBlock
+            x:Name="PART_ExtIconsHeading"
+            Classes="group"
+            IsVisible="{OnPlatform False,
+                                   Windows=True,
+                                   x:TypeArguments=x:Boolean}"
+            LangKey="Settings_FileExtensionIcons" />
+        <StackPanel
+            x:Name="PART_ExtIconsGroup"
+            Margin="{DynamicResource SettingsGroupIndent}"
+            IsVisible="{OnPlatform False,
+                                   Windows=True,
+                                   x:TypeArguments=x:Boolean}"
+            Spacing="10">
+            <ui:PhTextBlock
+                x:Name="PART_ExtIconsDesc"
+                LangKey="Settings_FileExtensionIcons_Description"
+                Opacity="0.75"
+                TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <ui:PhButton x:Name="PART_OpenExtIconFolder" HorizontalContentAlignment="Center" />
+                <ui:PhButton
+                    x:Name="PART_GetExtIconPacks"
+                    VerticalAlignment="Center"
+                    Variant="Link" />
+            </StackPanel>
+        </StackPanel>
+
+
+        <!--  Default photo viewer (Windows only)  -->
+        <ui:PhTextBlock
+            x:Name="PART_DefaultViewerHeading"
+            Classes="group"
+            IsVisible="{OnPlatform False,
+                                   Windows=True,
+                                   x:TypeArguments=x:Boolean}"
+            LangKey="Settings_DefaultPhotoViewer" />
+        <StackPanel
+            x:Name="PART_DefaultViewerGroup"
+            Margin="{DynamicResource SettingsGroupIndent}"
+            IsVisible="{OnPlatform False,
+                                   Windows=True,
+                                   x:TypeArguments=x:Boolean}"
+            Spacing="10">
+            <ui:PhTextBlock
+                LangKey="Settings_DefaultPhotoViewer_Description"
+                Opacity="0.75"
+                TextWrapping="Wrap" />
+            <Border
+                Margin="0,0,0,4"
+                Padding="8"
+                Background="{DynamicResource IG_BackgroundWarningBrush}"
+                CornerRadius="{DynamicResource ControlCornerRadius}">
+                <ui:PhTextBlock
+                    x:Name="PART_LblSetViewerWarning"
+                    LangKey="Settings_UnmanagedSettingReminder"
+                    TextWrapping="Wrap" />
+            </Border>
+            <ui:PhTextBlock x:Name="PART_ScopeInfo" TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <ui:PhButton
+                    x:Name="PART_Register"
+                    MinWidth="100"
+                    HorizontalContentAlignment="Center" />
+                <ui:PhButton
+                    x:Name="PART_Unregister"
+                    MinWidth="100"
+                    HorizontalContentAlignment="Center" />
+                <ui:PhButton
+                    x:Name="PART_OpenDefaultApps"
+                    VerticalAlignment="Center"
+                    Variant="Link" />
+            </StackPanel>
+        </StackPanel>
+
+
+        <!--  Applications menu (visibility decided in code: AppImage builds only)  -->
+        <ui:PhTextBlock
+            x:Name="PART_AppMenuHeading"
+            Classes="group"
+            IsVisible="False"
+            LangKey="Settings_AppMenuEntry" />
+        <StackPanel
+            x:Name="PART_AppMenuGroup"
+            Margin="{DynamicResource SettingsGroupIndent}"
+            IsVisible="False"
+            Spacing="10">
+            <ui:PhTextBlock
+                LangKey="Settings_AppMenuEntry_Description"
+                Opacity="0.75"
+                TextWrapping="Wrap" />
+            <Border
+                Margin="0,0,0,4"
+                Padding="8"
+                Background="{DynamicResource IG_BackgroundWarningBrush}"
+                CornerRadius="{DynamicResource ControlCornerRadius}">
+                <ui:PhTextBlock LangKey="Settings_UnmanagedSettingReminder" TextWrapping="Wrap" />
+            </Border>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <ui:PhButton
+                    x:Name="PART_RegisterAppMenu"
+                    MinWidth="100"
+                    HorizontalContentAlignment="Center" />
+                <ui:PhButton
+                    x:Name="PART_UnregisterAppMenu"
+                    MinWidth="100"
+                    HorizontalContentAlignment="Center" />
+            </StackPanel>
+        </StackPanel>
+
+
+        <!--  File formats  -->
+        <ui:PhTextBlock Classes="group" LangKey="Settings_FileFormats" />
+        <StackPanel Margin="{DynamicResource SettingsGroupIndent}" Spacing="10">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <ui:PhButton
+                    x:Name="PART_AddFormat"
+                    MinWidth="100"
+                    HorizontalContentAlignment="Center"
+                    Variant="Outline" />
+                <ui:PhButton
+                    x:Name="PART_ResetFormats"
+                    VerticalAlignment="Center"
+                    Variant="Link" />
+            </StackPanel>
+
+            <!--  search (left) + total count (right)  -->
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                <ui:PhSearchBoxControl
+                    x:Name="PART_Search"
+                    Grid.Column="0"
+                    Width="250" />
+                <ui:PhTextBlock
+                    x:Name="PART_TotalFormats"
+                    Grid.Column="2"
+                    VerticalAlignment="Center"
+                    LangKey="Settings_TotalSupportedFormats" />
+            </Grid>
+
+            <!--  formats table (rows built in code-behind)  -->
+            <ui:PhTableControl x:Name="PART_Table" HorizontalAlignment="Stretch" />
+        </StackPanel>
+
+    </StackPanel>
+</windows:SettingsPageView>

@@ -85,8 +85,12 @@ public partial class PhotoManager
         // 1. stop any ongoing search
         Core.FileSearchProvider.CancelSearching();
 
+        // enumeration emits absolute paths; inputs must match or the init photo never resolves
+        var absPaths = paths.Select(BHelper.ResolvePath).ToList();
+        currentFilePath = BHelper.ResolvePath(currentFilePath);
+
         // 2. get distinct dir paths for searching
-        var inputPaths = BHelper.GetDistinctDirsFromPaths(paths);
+        var inputPaths = BHelper.GetDistinctDirsFromPaths(absPaths);
 
 
         // 3. preserve the current photo if requested

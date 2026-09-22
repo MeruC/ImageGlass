@@ -147,15 +147,15 @@ public partial class CropImageToolControl : PhControl, IToolControl
     {
         base.OnIgLanguageChanged();
 
-        PART_BtnReset.Text = Core.Lang[LangId.FrmCrop_BtnReset];
-        PART_BtnSave.Text = Core.Lang[LangId.FrmCrop_BtnSave];
-        PART_BtnSaveAs.Text = Core.Lang[LangId.FrmCrop_BtnSaveAs];
-        PART_BtnCrop.Text = Core.Lang[LangId.FrmCrop_BtnCrop];
-        PART_BtnCopy.Text = Core.Lang[LangId.FrmCrop_BtnCopy];
+        PART_BtnReset.Text = Core.Lang[LangId.Tool_Crop_BtnReset];
+        PART_BtnSave.Text = Core.Lang[LangId.Tool_Crop_BtnSave];
+        PART_BtnSaveAs.Text = Core.Lang[LangId.Tool_Crop_BtnSaveAs];
+        PART_BtnCrop.Text = Core.Lang[LangId.Tool_Crop_BtnCrop];
+        PART_BtnCopy.Text = Core.Lang[LangId.Tool_Crop_BtnCopy];
 
-        PART_CmdAspectRatio.Items[0] = Core.Lang[LangId.FrmCrop_SelectionAspectRatio_FreeRatio];
-        PART_CmdAspectRatio.Items[1] = Core.Lang[LangId.FrmCrop_SelectionAspectRatio_Custom];
-        PART_CmdAspectRatio.Items[2] = Core.Lang[LangId.FrmCrop_SelectionAspectRatio_Original];
+        PART_CmdAspectRatio.Items[0] = Core.Lang[LangId.Tool_Crop_SelectionAspectRatio_FreeRatio];
+        PART_CmdAspectRatio.Items[1] = Core.Lang[LangId.Tool_Crop_SelectionAspectRatio_Custom];
+        PART_CmdAspectRatio.Items[2] = Core.Lang[LangId.Tool_Crop_SelectionAspectRatio_Original];
     }
 
 
@@ -282,7 +282,7 @@ public partial class CropImageToolControl : PhControl, IToolControl
         var bitmap = Viewer.GetRenderedBitmap(true);
         var photo = new Photo(bitmap);
 
-        await Core.API!.LoadClipboardPhotoAsync(photo);
+        await AppAPIProvider.LoadClipboardPhotoAsync(photo);
     }
 
 

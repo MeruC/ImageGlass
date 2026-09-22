@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <?include Variables.wxi ?>
+
+  <!-- Four-screen wizard: Agreement -> Installation type -> Progress -> Complete. -->
+  <!-- Hand-authored because WixUI_Advanced cannot drive a dual-scope package: it never sets
+       MSIINSTALLPERUSER and its per-machine default resolves to the per-user folder. -->
+  <Fragment>
+    <!-- Regenerate with msi/script-generate-msi-art.ps1 after changing the app logo. -->
+    <WixVariable Id="WixUIBannerBmp" Value="$(sys.SOURCEFILEDIR)assets\banner.png" />
+    <WixVariable Id="WixUIDialogBmp" Value="$(sys.SOURCEFILEDIR)assets\dialog.png" />
+
+    <UI Id="IgWixUI">
+      <TextStyle Id="WixUI_Font_Normal" FaceName="Segoe UI" Size="9" />
+      <TextStyle Id="WixUI_Font_Bigger" FaceName="Segoe UI" Size="14" />
+      <TextStyle Id="WixUI_Font_Title"  FaceName="Segoe UI" Size="10" Bold="yes" />
+      <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+
+      <!-- Stock dialogs reused as-is; ProgressDlg is screen 3. Screen 4 is ours, below. -->
+      <DialogRef Id="PrepareDlg" />
+      <DialogRef Id="ProgressDlg" />
+      <DialogRef Id="FatalError" />
+      <DialogRef Id="UserExit" />
+      <DialogRef Id="ResumeDlg" />
+      <DialogRef Id="ErrorDlg" />
+      <DialogRef Id="FilesInUse" />
+      <DialogRef Id="MsiRMFilesInUse" />
+      <DialogRef Id="CancelDlg" />
+      <DialogRef Id="WaitForCostingDlg" />
+      <DialogRef Id="OutOfDiskDlg" />
+      <DialogRef Id="OutOfRbDiskDlg" />
+      <DialogRef Id="BrowseDlg" />
+      <DialogRef Id="InvalidDirDlg" />
+      <DialogRef Id="DiskCostDlg" />
+      <DialogRef Id="MaintenanceWelcomeDlg" />
+      <DialogRef Id="MaintenanceTypeDlg" />
+      <DialogRef Id="VerifyReadyDlg" />
+
+      <!-- ==== Screen 1: Agreement ====================================================== -->
+      <Dialog Id="IgAgreementDlg" Width="370" Height="270" Title="!(loc.IgDlgTitle)">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44"
+                 TabSkip="no" Text="!(loc.IgBannerBitmap)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="240" Height="15"
+                 Transparent="yes" NoPrefix="yes"
+                 Text="{\WixUI_Font_Title}!(loc.IgAgreementTitle)" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="330" Height="15"
+                 Transparent="yes" NoPrefix="yes" Text="!(loc.IgAgreementDescription)" />
+
+        <Control Id="Body" Type="Text" X="20" Y="58" Width="330" Height="48"
+                 Text="!(loc.IgAgreementBody)" />
+
+        <!-- MSI 5.0 Hyperlink control; opens the default browser with no ControlEvent needed. -->
+        <Control Id="TermsLink" Type="Hyperlink" X="20" Y="112" Width="330" Height="16"
+                 Text="!(loc.IgTermsLink)" />
+
+        <Control Id="AgreeCheckBox" Type="CheckBox" X="20" Y="132" Width="330" Height="18"
+                 Property="IGAGREETOTERMS" CheckBoxValue="1"
+                 Text="!(loc.IgAgreementAgree)" />
+
+        <!-- Icon control rather than an emoji: MSI string columns are ANSI, so anything outside
+             CP1252 fails the build. WixUI_Ico_Info is already in the Binary table. -->
+        <!-- FixedSize="no" so the icon scales with the dialog instead of staying 16px on a
+             high-DPI monitor; IconSize picks the largest frame to scale from. -->
+        <Control Id="InfoIcon" Type="Icon" X="20" Y="162" Width="24" Height="24"
+                 TabSkip="yes" FixedSize="no" IconSize="48" Text="!(loc.IgInfoIcon)" />
+        <!-- Heading and body are separate controls: an MSI string cannot hold a line break. -->
+        <Control Id="ProPitchTitle" Type="Text" X="50" Y="162" Width="300" Height="14"
+                 NoPrefix="yes" Text="{\WixUI_Font_Title}!(loc.IgProPitchTitle)" />
+        <Control Id="ProPitch" Type="Text" X="50" Y="177" Width="300" Height="30"
+                 Text="!(loc.IgProPitch)" />
+        <Control Id="ProLink" Type="Hyperlink" X="50" Y="208" Width="300" Height="14"
+                 Text="!(loc.IgProLink)" />
+
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17"
+                 Disabled="yes" Text="!(loc.WixUIBack)" />
+        <!--
+          A ControlCondition, i.e. a UI table row. /qn skips InstallUISequence entirely, so this
+          gate never runs for a silent install. Never express it as a LaunchCondition instead.
+        -->
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes"
+                 Text="!(loc.WixUINext)"
+                 EnableCondition="IGAGREETOTERMS = &quot;1&quot;"
+                 DisableCondition="IGAGREETOTERMS &lt;&gt; &quot;1&quot;">
+          <Publish Event="NewDialog" Value="IgInstallScopeDlg" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17"
+                 Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+
+      <!-- ==== Screen 2: Installation type ============================================== -->
+      <Dialog Id="IgInstallScopeDlg" Width="370" Height="270" Title="!(loc.IgDlgTitle)">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44"
+                 TabSkip="no" Text="!(loc.IgBannerBitmap)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="240" Height="15"
+                 Transparent="yes" NoPrefix="yes"
+                 Text="{\WixUI_Font_Title}!(loc.IgScopeTitle)" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="330" Height="15"
+                 Transparent="yes" NoPrefix="yes" Text="!(loc.IgScopeDescription)" />
+
+        <Control Id="ScopeLabel" Type="Text" X="20" Y="55" Width="330" Height="14"
+                 Text="!(loc.IgScopeGroupLabel)" />
+
+        <!-- A RadioButtonGroup cannot raise ControlEvents, so the two PathEdit controls below
+             sit at the same coordinates and swap on this property instead. -->
+        <!-- Locked to the scope already installed: Windows Installer cannot move a product
+             between the two, so letting it be changed only produces a failed upgrade. -->
+        <Control Id="ScopeGroup" Type="RadioButtonGroup" X="20" Y="70" Width="330" Height="78"
+                 Property="IGINSTALLSCOPE"
+                 EnableCondition="NOT IGPREVPERUSER AND NOT IGPREVPERMACHINE"
+                 DisableCondition="IGPREVPERUSER OR IGPREVPERMACHINE">
+          <RadioButtonGroup Property="IGINSTALLSCOPE">
+            <RadioButton Value="perUser"    X="0" Y="0"  Width="320" Height="17"
+                         Text="!(loc.IgScopePerUser)" />
+            <RadioButton Value="perMachine" X="0" Y="42" Width="320" Height="17"
+                         Text="!(loc.IgScopePerMachine)" />
+          </RadioButtonGroup>
+        </Control>
+
+        <!-- Each note sits under its own radio, inside the group rect; a radio group draws no
+             container, so overlapping text is fine and neither note looks misattributed. -->
+        <Control Id="PerUserNote" Type="Text" X="33" Y="88" Width="310" Height="16"
+                 Transparent="yes" Text="!(loc.IgScopePerUserNote)" />
+        <Control Id="PerMachineNote" Type="Text" X="33" Y="130" Width="310" Height="16"
+                 Transparent="yes" Text="!(loc.IgScopePerMachineNote)" />
+
+        <Control Id="FolderLabel" Type="Text" X="20" Y="156" Width="330" Height="14"
+                 Text="!(loc.IgFolderLabel)" />
+
+        <Control Id="FolderUser" Type="PathEdit" X="20" Y="171" Width="266" Height="18"
+                 Sunken="yes" Property="IGFOLDERPERUSER" Indirect="no"
+                 ShowCondition="IGINSTALLSCOPE = &quot;perUser&quot;"
+                 HideCondition="IGINSTALLSCOPE &lt;&gt; &quot;perUser&quot;" />
+        <Control Id="BrowseUser" Type="PushButton" X="292" Y="170" Width="56" Height="17"
+                 Text="!(loc.IgBrowse)"
+                 ShowCondition="IGINSTALLSCOPE = &quot;perUser&quot;"
+                 HideCondition="IGINSTALLSCOPE &lt;&gt; &quot;perUser&quot;">
+          <Publish Property="_BrowseProperty" Value="IGFOLDERPERUSER" Order="1" />
+          <Publish Event="SpawnDialog" Value="BrowseDlg" Order="2" />
+        </Control>
+
+        <Control Id="FolderMachine" Type="PathEdit" X="20" Y="171" Width="266" Height="18"
+                 Sunken="yes" Property="IGFOLDERPERMACHINE" Indirect="no"
+                 ShowCondition="IGINSTALLSCOPE = &quot;perMachine&quot;"
+                 HideCondition="IGINSTALLSCOPE &lt;&gt; &quot;perMachine&quot;" />
+        <Control Id="BrowseMachine" Type="PushButton" X="292" Y="170" Width="56" Height="17"
+                 Text="!(loc.IgBrowse)"
+                 ShowCondition="IGINSTALLSCOPE = &quot;perMachine&quot;"
+                 HideCondition="IGINSTALLSCOPE &lt;&gt; &quot;perMachine&quot;">
+          <Publish Property="_BrowseProperty" Value="IGFOLDERPERMACHINE" Order="1" />
+          <Publish Event="SpawnDialog" Value="BrowseDlg" Order="2" />
+        </Control>
+
+        <Control Id="ElevationNote" Type="Text" X="20" Y="198" Width="330" Height="20"
+                 Text="!(loc.IgElevationNote)"
+                 ShowCondition="IGINSTALLSCOPE = &quot;perMachine&quot;"
+                 HideCondition="IGINSTALLSCOPE &lt;&gt; &quot;perMachine&quot;" />
+        <!-- Set by FindRelatedProducts, which runs before this dialog. Shown only for an install
+             too old to have left a scope marker; the locked note below covers the rest. -->
+        <Control Id="ReplaceNote" Type="Text" X="20" Y="216" Width="330" Height="20"
+                 Text="!(loc.IgReplaceNote)"
+                 ShowCondition="(WIX_UPGRADE_DETECTED OR IGV9INSTALLED) AND NOT IGPREVPERUSER AND NOT IGPREVPERMACHINE"
+                 HideCondition="IGPREVPERUSER OR IGPREVPERMACHINE OR (NOT WIX_UPGRADE_DETECTED AND NOT IGV9INSTALLED)" />
+        <Control Id="ReplaceNoteLocked" Type="Text" X="20" Y="216" Width="330" Height="20"
+                 Text="!(loc.IgReplaceNoteLocked)"
+                 ShowCondition="IGPREVPERUSER OR IGPREVPERMACHINE"
+                 HideCondition="NOT IGPREVPERUSER AND NOT IGPREVPERMACHINE" />
+
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17"
+                 Text="!(loc.WixUIBack)">
+          <Publish Event="NewDialog" Value="IgAgreementDlg" />
+        </Control>
+        <!-- Publish order is load-bearing: context, then folder, then commit it to the Directory row. -->
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes"
+                 Text="!(loc.WixUINext)">
+          <!-- ALLUSERS too: the client collapsed it at startup, so the other alone is a no-op. -->
+          <Publish Property="ALLUSERS" Value="{}" Order="1"
+                   Condition="IGINSTALLSCOPE = &quot;perUser&quot;" />
+          <Publish Property="MSIINSTALLPERUSER" Value="1" Order="2"
+                   Condition="IGINSTALLSCOPE = &quot;perUser&quot;" />
+          <Publish Property="ALLUSERS" Value="1" Order="3"
+                   Condition="IGINSTALLSCOPE = &quot;perMachine&quot;" />
+          <Publish Property="MSIINSTALLPERUSER" Value="{}" Order="4"
+                   Condition="IGINSTALLSCOPE = &quot;perMachine&quot;" />
+          <Publish Property="INSTALLFOLDER" Value="[IGFOLDERPERUSER]" Order="5"
+                   Condition="IGINSTALLSCOPE = &quot;perUser&quot;" />
+          <Publish Property="INSTALLFOLDER" Value="[IGFOLDERPERMACHINE]" Order="6"
+                   Condition="IGINSTALLSCOPE = &quot;perMachine&quot;" />
+          <Publish Event="SetTargetPath" Value="[WIXUI_INSTALLDIR]" Order="7" />
+          <Publish Event="DoAction" Value="WixUIValidatePath_$(var.WixUiArch)" Order="8" />
+          <Publish Event="SpawnDialog" Value="InvalidDirDlg" Order="9"
+                   Condition="WIXUI_INSTALLDIR_VALID &lt;&gt; &quot;1&quot;" />
+          <!-- Straight to ProgressDlg: no VerifyReadyDlg, so the flow stays at four screens. -->
+          <Publish Event="EndDialog" Value="Return" Order="10"
+                   Condition="WIXUI_INSTALLDIR_VALID = &quot;1&quot;" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17"
+                 Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+
+      <!-- ==== Flow ===================================================================== -->
+      <Publish Dialog="BrowseDlg" Control="OK" Event="DoAction"
+               Value="WixUIValidatePath_$(var.WixUiArch)" Order="1" />
+      <Publish Dialog="BrowseDlg" Control="OK" Event="SpawnDialog" Value="InvalidDirDlg" Order="2"
+               Condition="WIXUI_INSTALLDIR_VALID &lt;&gt; &quot;1&quot;" />
+
+      <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog"
+               Value="MaintenanceTypeDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RepairButton" Event="NewDialog"
+               Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog"
+               Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog"
+               Value="MaintenanceWelcomeDlg" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog"
+               Value="MaintenanceTypeDlg" Condition="Installed AND NOT PATCH" />
+
+      <!-- ==== Screen 4: Complete ======================================================= -->
+      <!-- Ours rather than the stock ExitDialog, which has no room for the Pro link and cannot
+           take an extra control without being redefined anyway. -->
+      <Dialog Id="IgCompleteDlg" Width="370" Height="270" Title="!(loc.IgDlgTitle)">
+        <Control Id="Bitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="234"
+                 TabSkip="no" Disabled="yes" Text="!(loc.IgDialogBitmap)" />
+        <Control Id="Title" Type="Text" X="135" Y="20" Width="220" Height="50"
+                 Transparent="yes" NoPrefix="yes"
+                 Text="{\WixUI_Font_Bigger}!(loc.IgCompleteTitle)" />
+        <Control Id="Description" Type="Text" X="135" Y="76" Width="220" Height="30"
+                 Transparent="yes" NoPrefix="yes" Text="!(loc.IgCompleteDescription)" />
+
+        <!-- Install only: neither the pitch nor the launch box makes sense after a removal. -->
+        <Control Id="InfoIcon" Type="Icon" X="135" Y="108" Width="24" Height="24"
+                 TabSkip="yes" FixedSize="no" IconSize="48" Text="!(loc.IgInfoIcon)"
+                 ShowCondition="NOT Installed" HideCondition="Installed" />
+        <Control Id="ProPitchTitle" Type="Text" X="165" Y="108" Width="190" Height="14"
+                 Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}!(loc.IgProPitchTitle)"
+                 ShowCondition="NOT Installed" HideCondition="Installed" />
+        <Control Id="ProPitch" Type="Text" X="165" Y="123" Width="190" Height="54"
+                 Transparent="yes" NoPrefix="yes" Text="!(loc.IgProPitch)"
+                 ShowCondition="NOT Installed" HideCondition="Installed" />
+        <Control Id="ProLink" Type="Hyperlink" X="165" Y="178" Width="190" Height="14"
+                 Text="!(loc.IgProLink)"
+                 ShowCondition="NOT Installed" HideCondition="Installed" />
+
+        <Control Id="LaunchCheckBox" Type="CheckBox" X="135" Y="196" Width="220" Height="18"
+                 Property="IGLAUNCHAFTERINSTALL" CheckBoxValue="1"
+                 Text="!(loc.IgLaunchAfterInstall)"
+                 ShowCondition="NOT Installed" HideCondition="Installed" />
+
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17"
+                 Disabled="yes" Text="!(loc.WixUIBack)" />
+        <!-- Cancel="yes" makes Finish the close-box target too, so the title-bar X works. -->
+        <Control Id="Finish" Type="PushButton" X="236" Y="243" Width="56" Height="17"
+                 Default="yes" Cancel="yes" Text="!(loc.IgFinish)">
+          <Publish Event="DoAction" Value="IgLaunchApp" Order="1"
+                   Condition="IGLAUNCHAFTERINSTALL = &quot;1&quot; AND NOT Installed" />
+          <Publish Event="EndDialog" Value="Return" Order="999" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17"
+                 Disabled="yes" Text="!(loc.WixUICancel)" />
+      </Dialog>
+    </UI>
+
+    <UIRef Id="WixUI_Common" />
+
+    <!-- Our first dialog needs its own Show row; the stock ones carry theirs. -->
+    <InstallUISequence>
+      <Show Dialog="IgAgreementDlg" Before="ProgressDlg" Condition="NOT Installed" />
+      <Show Dialog="IgCompleteDlg" OnExit="success" />
+    </InstallUISequence>
+
+    <!-- ICE20 requires an exit dialog in this sequence too; the stock ExitDialog supplied one. -->
+    <AdminUISequence>
+      <Show Dialog="IgCompleteDlg" OnExit="success" />
+    </AdminUISequence>
+
+    <!-- After ExecuteAction, or it resolves before the dialog has chosen the folder. -->
+    <SetProperty Id="IgLaunchTarget" Value="[#FileImageGlassExe]"
+                 After="ExecuteAction" Sequence="ui" />
+    <!-- Type 50, not util:ShellExecute (an extra extension) nor FileRef (type 18 errors 2753). -->
+    <CustomAction Id="IgLaunchApp" Property="IgLaunchTarget" ExeCommand=""
+                  Execute="immediate" Impersonate="yes" Return="asyncNoWait" />
+  </Fragment>
+</Wix>

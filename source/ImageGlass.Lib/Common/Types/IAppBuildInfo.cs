@@ -21,9 +21,14 @@ namespace ImageGlass.Common.Types;
 public interface IAppBuildInfo
 {
     /// <summary>
-    /// Gets the app version string. e.g. <c>10.0.0.306-beta-win32-x64</c>.
+    /// Gets the app version string. e.g. <c>10.0.0.306</c>.
     /// </summary>
-    string AppVersion { get; }
+    string Version { get; }
+
+    /// <summary>
+    /// Gets the full version string. e.g. <c>10.0.0.306-beta-win32-x64</c>.
+    /// </summary>
+    string FullVersion { get; }
 
     /// <summary>
     /// Gets the release type. e.g. <c>stable</c>, <c>beta</c>, <c>preview</c>.

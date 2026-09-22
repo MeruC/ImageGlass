@@ -1,0 +1,75 @@
+<windows:SettingsPageView
+    x:Class="ImageGlass.Common.Windows.GallerySettingsView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:types="using:ImageGlass.Common.Types"
+    xmlns:ui="using:ImageGlass.UI"
+    xmlns:windows="using:ImageGlass.Common.Windows"
+    mc:Ignorable="d"
+    d:DesignWidth="600"
+    HorizontalAlignment="Stretch">
+
+    <StackPanel Orientation="Vertical">
+
+        <!--  Appearance  -->
+        <ui:PhTextBlock Classes="group" LangKey="Settings_Appearance" />
+        <StackPanel Margin="{DynamicResource SettingsGroupIndent}" Spacing="10">
+            <StackPanel>
+                <CheckBox x:Name="PART_ShowGalleryInFullscreen">
+                    <ui:PhTextBlock LangKey="Settings_ShowGalleryInFullscreen" TextWrapping="Wrap" />
+                </CheckBox>
+                <CheckBox x:Name="PART_ShowGalleryFileName">
+                    <ui:PhTextBlock LangKey="Settings_ShowGalleryFileName" TextWrapping="Wrap" />
+                </CheckBox>
+                <CheckBox x:Name="PART_ShellThumbnail" IsVisible="{OnPlatform False, Windows=True, x:TypeArguments=x:Boolean}">
+                    <ui:PhTextBlock LangKey="Settings_EnableGalleryShellThumbnail" TextWrapping="Wrap" />
+                </CheckBox>
+            </StackPanel>
+
+            <!--  Gallery columns (1 - 100)  -->
+            <StackPanel Spacing="{DynamicResource SettingsLabelInputGap}">
+                <ui:PhTextBlock x:Name="PART_GalleryColumnsLabel" LangKey="Settings_GalleryColumns" />
+                <Slider
+                    x:Name="PART_GalleryColumns"
+                    Width="200"
+                    HorizontalAlignment="Left"
+                    IsSnapToTickEnabled="True"
+                    Maximum="100"
+                    Minimum="1"
+                    TickFrequency="1" />
+            </StackPanel>
+
+            <!--  Thumbnail size (px)  -->
+            <StackPanel Spacing="{DynamicResource SettingsLabelInputGap}">
+                <ui:PhTextBlock x:Name="PART_ThumbnailSizeLabel" LangKey="Settings_ThumbnailSize" />
+                <Slider
+                    x:Name="PART_ThumbnailSize"
+                    Width="200"
+                    HorizontalAlignment="Left"
+                    IsSnapToTickEnabled="True"
+                    Maximum="1000"
+                    Minimum="10"
+                    TickFrequency="1" />
+            </StackPanel>
+
+            <!--  Gallery cache size (MB)  -->
+            <StackPanel Spacing="{DynamicResource SettingsLabelInputGap}">
+                <ui:PhTextBlock LangKey="Settings_GalleryCacheSizeInMb" TextWrapping="Wrap" />
+                <ui:PhTextBox
+                    x:Name="PART_GalleryCacheSize"
+                    Width="200"
+                    HorizontalAlignment="Left"
+                    AcceptValue="UnsignedIntValueOnly" />
+
+                <ui:PhButton
+                    x:Name="PART_ClearCache"
+                    HorizontalAlignment="Left"
+                    Variant="Link" />
+            </StackPanel>
+        </StackPanel>
+
+    </StackPanel>
+
+</windows:SettingsPageView>

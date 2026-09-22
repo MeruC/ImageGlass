@@ -1,0 +1,86 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Style Selector="CheckBox">
+        <Setter Property="CornerRadius" Value="3.5" />
+
+        <!--  unchecked box:  -->
+        <Style Selector="^:unchecked /template/ Border#NormalRectangle">
+            <Setter Property="Background" Value="{DynamicResource PhButtonBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PhButtonBorderBrush}" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.04" />
+                    <BrushTransition Property="BorderBrush" Duration="0:0:0.04" />
+                </Transitions>
+            </Setter>
+        </Style>
+
+        <!--  unchecked hover  -->
+        <Style Selector="^:unchecked:pointerover /template/ Border#NormalRectangle">
+            <Setter Property="Background" Value="{DynamicResource PhButtonBackgroundPointerOver}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PhButtonBorderBrush}" />
+        </Style>
+
+        <!--  unchecked pressed  -->
+        <Style Selector="^:unchecked:pressed /template/ Border#NormalRectangle">
+            <Setter Property="Background" Value="{DynamicResource PhButtonBackgroundPressed}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PhButtonBorderBrushPressed}" />
+        </Style>
+
+        <!--
+            checked / indeterminate box. Selected as "not unchecked" so switching between the two
+            never deactivates the style: a gap would restart the brush transition and flash.
+        -->
+        <Style Selector="^:not(:unchecked) /template/ Border#NormalRectangle">
+            <Setter Property="Background" Value="{DynamicResource PhAccentFill}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PhAccentFill}" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.04" />
+                    <BrushTransition Property="BorderBrush" Duration="0:0:0.04" />
+                </Transitions>
+            </Setter>
+        </Style>
+
+        <!--  checked / indeterminate hover  -->
+        <Style Selector="^:not(:unchecked):pointerover /template/ Border#NormalRectangle">
+            <Setter Property="Background" Value="{DynamicResource PhAccentFillPointerOver}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PhAccentFillPointerOver}" />
+        </Style>
+
+        <!--  checked / indeterminate pressed  -->
+        <Style Selector="^:not(:unchecked):pressed /template/ Border#NormalRectangle">
+            <Setter Property="Background" Value="{DynamicResource PhAccentFillPressed}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PhAccentFillPressed}" />
+        </Style>
+
+        <!--  tick / dash glyph  -->
+        <Style Selector="^:not(:unchecked) /template/ Path#CheckGlyph">
+            <Setter Property="Fill" Value="{DynamicResource AccentButtonForeground}" />
+        </Style>
+
+        <!--
+            indeterminate mark: WinUI 3 draws a rounded dash (U+E9AE), Avalonia a square. The
+            capsule is 2 units thick on a 13.16 bbox, so it scales to the tick's exact stroke width.
+        -->
+        <Style Selector="^:indeterminate /template/ Path#CheckGlyph">
+            <Setter Property="Data" Value="M1,0 H12.16 A1,1 0 0 1 12.16,2 H1 A1,1 0 0 1 1,0 Z" />
+            <Setter Property="Width" Value="7" />
+        </Style>
+
+        <!--  disabled: shared neutral palette + subtle outline, gray tick  -->
+        <Style Selector="^:disabled:unchecked /template/ Border#NormalRectangle">
+            <Setter Property="Background" Value="{DynamicResource PhControlFillDisabled}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PhControlBorderDisabled}" />
+        </Style>
+        <Style Selector="^:disabled:not(:unchecked) /template/ Border#NormalRectangle">
+            <Setter Property="Background" Value="{DynamicResource PhControlFillDisabled}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PhControlBorderDisabled}" />
+        </Style>
+        <Style Selector="^:disabled:not(:unchecked) /template/ Path#CheckGlyph">
+            <Setter Property="Fill" Value="{DynamicResource PhControlGlyphDisabled}" />
+        </Style>
+
+    </Style>
+
+</Styles>

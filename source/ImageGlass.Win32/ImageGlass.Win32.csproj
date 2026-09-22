@@ -47,6 +47,9 @@
     <PublishAot>True</PublishAot>
     <AnalysisLevel>latest</AnalysisLevel>
     <EnforceCodeStyleInBuild>True</EnforceCodeStyleInBuild>
+
+    <!-- for Win10 LTSC 2021 -->
+    <CETCompat>false</CETCompat>
   </PropertyGroup>
 
 
@@ -54,12 +57,11 @@
     <!-- AOT support for GeneratedComInterface and LibraryImport -->
     <CsWin32RunAsBuildTask>true</CsWin32RunAsBuildTask>
     <DisableRuntimeMarshalling>true</DisableRuntimeMarshalling>
-  </PropertyGroup>
 
-  
-  <ItemGroup>
-    <AdditionalFiles Remove="NativeMethods.json" />
-  </ItemGroup>
+    <!-- WinRT CCW vtables for AOT: the default 'true' means OptIn outside WinUI, which emits nothing -->
+    <CsWinRTAotOptimizerEnabled>Auto</CsWinRTAotOptimizerEnabled>
+    <CsWinRTAotExportsEnabled>true</CsWinRTAotExportsEnabled>
+  </PropertyGroup>
 
   
   <ItemGroup>
@@ -80,11 +82,5 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ImageGlass.Lib\ImageGlass.Lib.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Update="NativeMethods.json">
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
 </Project>

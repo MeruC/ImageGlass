@@ -115,6 +115,15 @@ public partial class Config : PhReactive
     }
 
     /// <summary>
+    /// Gets, sets maximized state of the settings window.
+    /// </summary>
+    public bool EnableSettingsWindowMaximized
+    {
+        get => Get(ConfigId.EnableSettingsWindowMaximized, false);
+        set => Set(ConfigId.EnableSettingsWindowMaximized, value);
+    }
+
+    /// <summary>
     /// Gets, sets value indicating whether the slideshow mode is enabled or not.
     /// </summary>
     [JsonIgnore]
@@ -185,6 +194,17 @@ public partial class Config : PhReactive
     {
         get => Get(ConfigId.EnableLoopBackNavigation, true);
         set => Set(ConfigId.EnableLoopBackNavigation, value);
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether navigation automatically switches to the next/previous
+    /// sibling directory (that contains images) when reaching the end/start of the current image list.
+    /// Takes precedence over <see cref="EnableLoopBackNavigation"/> at the list boundary.
+    /// </summary>
+    public bool EnableAutoSwitchSiblingDir
+    {
+        get => Get(ConfigId.EnableAutoSwitchSiblingDir, false);
+        set => Set(ConfigId.EnableAutoSwitchSiblingDir, value);
     }
 
     /// <summary>
@@ -445,10 +465,14 @@ public partial class Config : PhReactive
 
     #region Number items
 
-    ///// <summary>
-    ///// Gets, sets the version that requires to open Quick setup ImageGlass dialog.
-    ///// </summary>
-    //public double QuickSetupVersion { get; set; } = 0;
+    /// <summary>
+    /// Gets, sets the version that requires to open Quick setup ImageGlass dialog.
+    /// </summary>
+    public double QuickSetupVersion
+    {
+        get => Get(ConfigId.QuickSetupVersion, 0d);
+        set => Set(ConfigId.QuickSetupVersion, value);
+    }
 
     /// <summary>
     /// Gets, sets the maximum panning margin in screen pixels beyond the image edge.
@@ -538,7 +562,7 @@ public partial class Config : PhReactive
     /// </summary>
     public uint CacheMaxMemoryInMb
     {
-        get => Get(ConfigId.CacheMaxMemoryInMb, 0u);
+        get => Get(ConfigId.CacheMaxMemoryInMb, 1000u);
         set => Set(ConfigId.CacheMaxMemoryInMb, value);
     }
 
@@ -669,10 +693,14 @@ public partial class Config : PhReactive
         set => Set(ConfigId.LastOpenedTool, value);
     }
 
-    ///// <summary>
-    ///// Gets, sets the last view of settings window.
-    ///// </summary>
-    //public string LastOpenedSetting { get; set; } = string.Empty;
+    /// <summary>
+    /// Gets, sets the last view of settings window.
+    /// </summary>
+    public string LastOpenedSetting
+    {
+        get => Get(ConfigId.LastOpenedSetting, string.Empty);
+        set => Set(ConfigId.LastOpenedSetting, value);
+    }
 
     /// <summary>
     /// Gets, sets background color of of the main window
@@ -706,7 +734,7 @@ public partial class Config : PhReactive
     /// </summary>
     public string LightTheme
     {
-        get => Get(ConfigId.LightTheme, "Kobe-Light");
+        get => Get(ConfigId.LightTheme, Const.DEFAULT_LIGHT_THEME);
         set => Set(ConfigId.LightTheme, value);
     }
 
@@ -732,6 +760,18 @@ public partial class Config : PhReactive
     {
         get => Get(ConfigId.CheckerboardMode, CheckerboardType.None);
         set => Set(ConfigId.CheckerboardMode, value);
+    }
+
+    /// <summary>
+    /// Gets, sets how the app behaves while browsing photos.
+    /// <see cref="BrowsingMode.Sequential"/> ignores navigation until the current photo
+    /// is fully loaded and rendered.
+    /// </summary>
+    [JsonConverter(typeof(JsonStringEnumSafeConverter<BrowsingMode>))]
+    public BrowsingMode BrowsingMode
+    {
+        get => Get(ConfigId.BrowsingMode, BrowsingMode.Turbo);
+        set => Set(ConfigId.BrowsingMode, value);
     }
 
     /// <summary>
@@ -821,6 +861,16 @@ public partial class Config : PhReactive
     }
 
     /// <summary>
+    /// Gets, sets the size and position of the settings window.
+    /// </summary>
+    [JsonConverter(typeof(JsonArrayToRectConverter))]
+    public Rect SettingsWindowBounds
+    {
+        get => Get(ConfigId.SettingsWindowBounds, new Rect(200, 200, 900, 580));
+        set => Set(ConfigId.SettingsWindowBounds, value);
+    }
+
+    /// <summary>
     /// Gets, sets zoom levels of the viewer
     /// </summary>
     [JsonConverter(typeof(JsonArrayToZoomFactorConverter))]
@@ -891,16 +941,6 @@ public partial class Config : PhReactive
     }
 
     /// <summary>
-    /// Gets, sets the list of locked features.
-    /// </summary>
-    [JsonConverter(typeof(JsonHashSetToStringConverter))]
-    public HashSet<string> LockedFeatures
-    {
-        get => Get(ConfigId.LockedFeatures, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
-        set => Set(ConfigId.LockedFeatures, value);
-    }
-
-    /// <summary>
     /// Gets, sets layout for FrmMain. Syntax:
     /// <c>Dictionary["ControlName", "LayoutPosition"]</c>
     /// </summary>
@@ -908,6 +948,17 @@ public partial class Config : PhReactive
     {
         get => Get(ConfigId.Layout, new Dictionary<LayoutControl, LayoutPosition>());
         set => Set(ConfigId.Layout, value);
+    }
+
+    /// <summary>
+    /// Gets, sets per-plugin trust decisions (enabled state + pinned library hash), keyed by
+    /// plugin id. A native plugin loads only when its entry is enabled and its pinned SHA-256
+    /// still matches the on-disk library. See <see cref="PluginTrustInfo"/>.
+    /// </summary>
+    public Dictionary<string, PluginTrustInfo> PluginTrust
+    {
+        get => Get(ConfigId.PluginTrust, new Dictionary<string, PluginTrustInfo>(StringComparer.Ordinal));
+        set => Set(ConfigId.PluginTrust, value);
     }
 
     /// <summary>
@@ -946,6 +997,23 @@ public partial class Config : PhReactive
 
 
     #region Public Methods
+
+    /// <summary>
+    /// Resets all settings to their built-in defaults by clearing the stored values
+    /// (getters then fall back to their hardcoded defaults).
+    /// </summary>
+    public void ResetToDefault()
+    {
+        _values.Clear();
+    }
+
+
+    /// <summary>
+    /// Whether a value is stored for <paramref name="configName"/>. <c>false</c> means the getter
+    /// falls back to its built-in default, which is how a never-written setting is detected.
+    /// </summary>
+    public bool HasValue(ConfigId configName) => _values.ContainsKey(configName);
+
 
     /// <summary>
     /// Sets setting value.
@@ -990,6 +1058,38 @@ public partial class Config : PhReactive
     {
         var value = _values.GetValueOrDefault(configName) ?? defaultValue;
         return (T)value!;
+    }
+
+
+    /// <summary>
+    /// Removes plugin-contributed <paramref name="extensions"/> from the persisted
+    /// <see cref="FileFormats"/> so a plugin's formats are not left behind after it is disabled or
+    /// removed. Built-in default formats are never removed (a plugin may also claim a format the app
+    /// supports natively). Plugin formats stay browsable while the plugin is loaded via
+    /// <see cref="Core.GetSupportedFileExtensions"/>. Returns the removed extensions; no-op if none
+    /// were present.
+    /// </summary>
+    public IReadOnlyList<string> PurgePluginFileFormats(IEnumerable<string> extensions)
+    {
+        var current = FileFormats;
+        var defaults = new HashSet<string>(DefaultFileFormats, StringComparer.OrdinalIgnoreCase);
+        var removed = new List<string>();
+
+        foreach (var ext in extensions)
+        {
+            if (string.IsNullOrWhiteSpace(ext)) continue;
+            var normalized = ext.StartsWith('.') ? ext : "." + ext;
+            if (defaults.Contains(normalized)) continue; // keep built-in formats
+            if (current.Contains(normalized)) removed.Add(normalized);
+        }
+
+        if (removed.Count == 0) return [];
+
+        var next = new HashSet<string>(current, StringComparer.OrdinalIgnoreCase);
+        foreach (var ext in removed) next.Remove(ext);
+
+        FileFormats = next;
+        return removed;
     }
 
     #endregion // Public Methods

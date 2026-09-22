@@ -20,6 +20,7 @@ using Avalonia;
 using Avalonia.Input;
 using Avalonia.Media;
 using ImageGlass.Common;
+using ImageGlass.Common.Loggers;
 using ImageGlass.Common.ServiceProviders;
 using ImageGlass.Common.ServiceProviders.FileSearchService;
 using ImageGlass.Mac.Common.ServiceProviders;
@@ -35,20 +36,21 @@ sealed class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        StartupTrace.Mark("Main:start");
         Core.BuildInfo = new AppBuildInfo();
 
         var isHandled = App.InitializeAppInstance(args, () =>
         {
             // initialize service providers
-            Core.FileSearchProvider = new MacFileSearchProvider();
+            Core.FileSearchProvider = new FileSearchProvider();
             Core.PreviewProvider = new PhotoPreviewProvider();
             Core.ShellProvider = new MacShellProvider();
-            Core.ShareProvider = new MacShareProvider();
             Core.PrintProvider = new MacPrintProvider();
         });
 
         if (isHandled) return 0;
 
+        StartupTrace.Mark("Avalonia:start");
         return BuildAvaloniaApp()
             .StartWithClassicDesktopLifetime(args);
     }
@@ -61,7 +63,7 @@ sealed class Program
         .LogToTrace()
         .WithDeveloperTools(o =>
         {
-            o.ApplicationName = BHelper.AppName;
+            o.ApplicationName = BHelper.AppDisplayName;
             o.Gesture = new KeyGesture(Key.I, KeyModifiers.Control | KeyModifiers.Shift);
         })
         .UsePlatformDetect()

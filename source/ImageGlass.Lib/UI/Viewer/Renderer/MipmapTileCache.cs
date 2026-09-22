@@ -16,6 +16,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
+using Avalonia.Threading;
 using ImageGlass.Common.Extensions;
 using ImageGlass.Common.Photoing;
 using ImageGlass.Common.Types;
@@ -23,17 +24,18 @@ using SkiaSharp;
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace ImageGlass.UI.Viewer;
 
 
 /// <summary>
 /// A tiled mipmap cache for rendering large images efficiently.
-/// Tiles are extracted on-demand from the source image at the requested mip level
+/// A downscaled proxy is shown while tiles are extracted on-demand at the requested mip level
 /// and cached with LRU eviction to bound memory usage.
 /// <para>
 /// At each mip level, a tile covers <c>TILE_SIZE &lt;&lt; mipLevel</c> source pixels
-/// but always outputs a <c>TILE_SIZE × TILE_SIZE</c> bitmap. This keeps the number
+/// but always outputs a <c>TILE_SIZE × TILE_SIZE</c> image. This keeps the number
 /// of visible tiles roughly constant (~12 for a 1920×1080 viewport) regardless of zoom.
 /// </para>
 /// For animated images, this cache should NOT be used.
@@ -43,6 +45,7 @@ internal sealed class MipmapTileCache : PhDisposable
     public const int TILE_SIZE = 512;
     private const int MAX_CACHED_TILES = 100;
     private const int MAX_MIP_LEVEL = 6;
+    private const int PROXY_MAX_DIMENSION = 4096;
 
     /// <summary>
     /// Minimum total pixels to benefit from tiling.
@@ -57,10 +60,10 @@ internal sealed class MipmapTileCache : PhDisposable
     private readonly Lock _lock = new();
 
     /// <summary>
-    /// Maps (tileX, tileY, mipLevel) to cached SKBitmap tiles.
-    /// Each tile is a 512×512 bitmap extracted from the source at the given mip level.
+    /// Maps (tileX, tileY, mipLevel) to cached SKImage tiles.
+    /// Each tile is a 512×512 image extracted from the source at the given mip level.
     /// </summary>
-    private readonly Dictionary<(int x, int y, int level), SKBitmap> _tiles = [];
+    private readonly Dictionary<(int x, int y, int level), SKImageRef> _tiles = [];
 
     /// <summary>
     /// Maps (tileX, tileY, mipLevel) to LinkedListNode for O(1) LRU promotion.
@@ -74,6 +77,12 @@ internal sealed class MipmapTileCache : PhDisposable
     /// When cache exceeds MAX_CACHED_TILES, tiles are evicted from the front.
     /// </summary>
     private readonly LinkedList<(int x, int y, int level)> _lruList = new();
+
+    /// <summary>
+    /// Pending tiles are processed newest-first so the current viewport is prioritized.
+    /// </summary>
+    private readonly Stack<(int x, int y, int level)> _tileQueue = new();
+    private readonly HashSet<(int x, int y, int level)> _pendingTiles = [];
 
     /// <summary>
     /// Reference to the full-resolution source image (SKImageRef).
@@ -92,11 +101,16 @@ internal sealed class MipmapTileCache : PhDisposable
     /// </summary>
     private readonly SKColorSpace? _colorSpace;
 
+    private readonly Action _tileReady;
+
     /// <summary>
     /// Maximum number of tiles to cache, scaled down for high-bit-depth formats
     /// to stay within a constant memory budget.
     /// </summary>
     private readonly int _maxCachedTiles;
+    private SKImageRef? _proxy;
+    private bool _workerRunning;
+    private bool _isStopping;
 
 
     /// <summary>
@@ -111,7 +125,7 @@ internal sealed class MipmapTileCache : PhDisposable
 
 
     private MipmapTileCache(SKImageRef sourceRef, int width, int height,
-        SKColorType colorType, SKColorSpace? colorSpace)
+        SKColorType colorType, SKColorSpace? colorSpace, Action tileReady)
     {
         _sourceRef = sourceRef;
         _sourceRef.KeepAlive();
@@ -119,6 +133,7 @@ internal sealed class MipmapTileCache : PhDisposable
         SourceHeight = height;
         _colorType = colorType;
         _colorSpace = colorSpace;
+        _tileReady = tileReady;
 
         // Scale max tiles inversely with bytes-per-pixel to keep a constant memory budget.
         // Budget baseline: MAX_CACHED_TILES tiles of Rgba8888 (4 bpp).
@@ -136,7 +151,7 @@ internal sealed class MipmapTileCache : PhDisposable
     /// Creates a tile cache for the given source image, or returns <c>null</c>
     /// if the image is too small to benefit from tiling.
     /// </summary>
-    public static MipmapTileCache? Create(SKImageRef? sourceRef)
+    public static MipmapTileCache? Create(SKImageRef? sourceRef, Action tileReady)
     {
         var img = sourceRef?.Image;
         if (img is null || img.IsDisposed()) return null;
@@ -144,8 +159,10 @@ internal sealed class MipmapTileCache : PhDisposable
         var pixels = (long)img.Width * img.Height;
         if (pixels < MIN_PIXELS_FOR_TILING) return null;
 
-        return new MipmapTileCache(sourceRef!, img.Width, img.Height,
-            img.ColorType, img.ColorSpace);
+        var cache = new MipmapTileCache(sourceRef!, img.Width, img.Height,
+            img.ColorType, img.ColorSpace, tileReady);
+        _ = Task.Run(cache.GenerateProxy);
+        return cache;
     }
 
 
@@ -179,17 +196,33 @@ internal sealed class MipmapTileCache : PhDisposable
     #region Instance Methods
 
     /// <summary>
-    /// Gets a tile bitmap, returning a cached version or extracting a new one.
-    /// The returned <see cref="SKBitmap"/> is owned by the cache — do NOT dispose it.
+    /// Acquires the downscaled full-image proxy, if it is ready.
     /// </summary>
-    public SKBitmap? GetTile(int tileX, int tileY, int mipLevel)
+    public SKImageRef.ImageLease? AcquireProxy()
+    {
+        if (IsDisposed) return null;
+
+        lock (_lock)
+        {
+            return _isStopping ? null : _proxy?.Acquire();
+        }
+    }
+
+
+    /// <summary>
+    /// Acquires the requested tile, or queues it for background generation.
+    /// </summary>
+    public SKImageRef.ImageLease? GetOrQueueTile(int tileX, int tileY, int mipLevel)
     {
         if (IsDisposed) return null;
 
         var key = (tileX, tileY, mipLevel);
+        var startWorker = false;
 
         lock (_lock)
         {
+            if (_isStopping) return null;
+
             if (_tiles.TryGetValue(key, out var cached))
             {
                 // O(1) LRU promotion
@@ -198,62 +231,122 @@ internal sealed class MipmapTileCache : PhDisposable
                     _lruList.Remove(node);
                     _lruList.AddLast(node);
                 }
-                return cached;
+                return cached.Acquire();
             }
+
+            if (_pendingTiles.Add(key))
+            {
+                _tileQueue.Push(key);
+            }
+
+            startWorker = !_workerRunning;
+            _workerRunning = true;
         }
 
-        // extract tile outside lock (heavy work, SKImage reads are thread-safe)
-        SKBitmap? tile;
+        if (startWorker) _ = Task.Run(ProcessPendingTiles);
+        return null;
+    }
+
+
+    private void ProcessPendingTiles()
+    {
+        while (true)
+        {
+            (int x, int y, int level) key;
+
+            lock (_lock)
+            {
+                if (_isStopping || _tileQueue.Count == 0)
+                {
+                    _workerRunning = false;
+                    return;
+                }
+
+                key = _tileQueue.Pop();
+            }
+
+            SKImage? tile = null;
+            try
+            {
+                tile = ExtractTile(key.x, key.y, key.level);
+            }
+            catch { }
+
+            lock (_lock)
+            {
+                _pendingTiles.Remove(key);
+
+                if (_isStopping || tile is null)
+                {
+                    tile?.Dispose();
+                    continue;
+                }
+
+                _tiles[key] = new SKImageRef(tile);
+                _nodeMap[key] = _lruList.AddLast(key);
+
+                // LRU eviction
+                while (_tiles.Count > _maxCachedTiles && _lruList.First is not null)
+                {
+                    var oldest = _lruList.First.Value;
+                    _lruList.RemoveFirst();
+                    _nodeMap.Remove(oldest);
+
+                    if (_tiles.Remove(oldest, out var image))
+                    {
+                        image.RequestDispose();
+                    }
+                }
+            }
+
+            RequestRedraw();
+        }
+    }
+
+
+    private void GenerateProxy()
+    {
+        if (IsDisposed) return;
+
+        var scale = (double)PROXY_MAX_DIMENSION / Math.Max(SourceWidth, SourceHeight);
+        SKImage? proxy = null;
+
         try
         {
-            tile = ExtractTile(tileX, tileY, mipLevel);
+            proxy = ExtractFromSource(0, 0, SourceWidth, SourceHeight,
+                Math.Max(1, (int)Math.Round(SourceWidth * scale)),
+                Math.Max(1, (int)Math.Round(SourceHeight * scale)));
         }
-        catch
-        {
-            return null;
-        }
-
-        if (tile is null) return null;
+        catch { }
 
         lock (_lock)
         {
-            // double-check: another thread may have inserted while we were extracting
-            if (_tiles.TryGetValue(key, out var existing))
+            if (_isStopping || proxy is null)
             {
-                tile.Dispose();
-                if (_nodeMap.TryGetValue(key, out var existingNode))
-                {
-                    _lruList.Remove(existingNode);
-                    _lruList.AddLast(existingNode);
-                }
-                return existing;
+                proxy?.Dispose();
+                return;
             }
 
-            _tiles[key] = tile;
-            _nodeMap[key] = _lruList.AddLast(key);
-
-            // LRU eviction
-            while (_tiles.Count > _maxCachedTiles && _lruList.First is not null)
-            {
-                var oldest = _lruList.First.Value;
-                _lruList.RemoveFirst();
-                _nodeMap.Remove(oldest);
-
-                if (_tiles.Remove(oldest, out var bitmap))
-                {
-                    bitmap.Dispose();
-                }
-            }
+            _proxy = new SKImageRef(proxy);
         }
 
-        return tile;
+        RequestRedraw();
+    }
+
+
+    private void RequestRedraw()
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!IsDisposed) _tileReady();
+        }, DispatcherPriority.Render);
     }
 
 
     /// <summary>
     /// Extracts a tile from the source image at the given mip level.
     /// </summary>
-    private SKBitmap? ExtractTile(int tileX, int tileY, int mipLevel)
+    private SKImage? ExtractTile(int tileX, int tileY, int mipLevel)
     {
         if (IsDisposed) return null;
 
@@ -279,7 +372,7 @@ internal sealed class MipmapTileCache : PhDisposable
     /// <summary>
     /// Extracts a tile by reading from the full-resolution source image.
     /// </summary>
-    private SKBitmap? ExtractFromSource(int srcX, int srcY, int srcW, int srcH, int tileW, int tileH)
+    private SKImage? ExtractFromSource(int srcX, int srcY, int srcW, int srcH, int tileW, int tileH)
     {
         using var lease = _sourceRef.Acquire();
         var srcImage = lease?.Image;
@@ -288,16 +381,20 @@ internal sealed class MipmapTileCache : PhDisposable
         // Use the source's color type and space so that high-bit-depth / HDR
         // data is preserved in tiles without unwanted color-space conversion.
         var info = new SKImageInfo(tileW, tileH, _colorType, SKAlphaType.Premul, _colorSpace);
-        var bitmap = new SKBitmap(info);
+        using var bitmap = new SKBitmap(info);
 
-        using var canvas = new SKCanvas(bitmap);
-        var samping = SkiaCodec.ToSamplingOptions(ImageInterpolation.CubicMitchell);
+        using (var canvas = new SKCanvas(bitmap))
+        {
+            var sampling = SkiaCodec.ToSamplingOptions(ImageInterpolation.CubicMitchell);
 
-        canvas.DrawImage(srcImage,
-            new SKRect(srcX, srcY, srcX + srcW, srcY + srcH),
-            new SKRect(0, 0, tileW, tileH), samping);
+            canvas.DrawImage(srcImage,
+                new SKRect(srcX, srcY, srcX + srcW, srcY + srcH),
+                new SKRect(0, 0, tileW, tileH), sampling);
+        }
 
-        return bitmap;
+        // allow the image to share the bitmap's pixel data
+        bitmap.SetImmutable();
+        return SKImage.FromBitmap(bitmap);
     }
 
 
@@ -307,10 +404,15 @@ internal sealed class MipmapTileCache : PhDisposable
 
         lock (_lock)
         {
-            foreach (var tile in _tiles.Values) tile.Dispose();
+            _isStopping = true;
+
+            _proxy?.RequestDispose();
+            foreach (var tile in _tiles.Values) tile.RequestDispose();
             _tiles.Clear();
             _lruList.Clear();
             _nodeMap.Clear();
+            _pendingTiles.Clear();
+            _tileQueue.Clear();
         }
 
         _sourceRef.RequestDispose();

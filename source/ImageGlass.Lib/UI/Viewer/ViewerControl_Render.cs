@@ -24,6 +24,7 @@ using Avalonia.Media.TextFormatting;
 using Avalonia.Threading;
 using ImageGlass.Common;
 using ImageGlass.Common.Extensions;
+using ImageGlass.Common.Loggers;
 using ImageGlass.Common.Photoing;
 using ImageGlass.Common.Types;
 using ImageGlass.UI.Viewer.Checkerboard;
@@ -47,6 +48,14 @@ public partial class ViewerControl
     internal SKImageRef? _imgRender;
     private AnimatorImpl? _animator;
     internal MipmapTileCache? _mipmapCache;
+
+    // retained pre-tone-map HDR frame for live in-memory re-tone-mapping (only while the HDR tool is active)
+    private SKImageRef? _imgHdrSource;
+    private InterlockedBool _liveHdrToneMapping = new(false);
+
+    // coalescing state for the background HDR re-tone-map pump (latest-request-wins)
+    private volatile bool _hdrDirty;
+    private int _hdrActive;
 
     private RenderTargetBitmap? _bmpCheckerboard;
     private readonly CheckerboardInfo _checkerboard = new();
@@ -335,6 +344,14 @@ public partial class ViewerControl
     {
         lock (_lock)
         {
+            // img may be disposed after the render posted this callback; ?. only guards null
+            var imgSize = img.IsDisposed() ? "0x0" : $"{img.Width}x{img.Height}";
+            PhotoTrace.Mark("render:first-draw", Photo?.FilePath,
+                $"{imgSize}, vector={IsVectorSource()}");
+
+            // the photo is now on screen; release anyone waiting on the first paint
+            _firstDrawTcs?.TrySetResult();
+
             // vector images don't need raster caching
             if (IsVectorSource())
             {
@@ -451,7 +468,10 @@ public partial class ViewerControl
         if (_animator is not null) return;
 
         // use the processed (color-managed) image if available, otherwise the source
-        _mipmapCache = MipmapTileCache.Create(_imgRender ?? _imgSource);
+        _mipmapCache = MipmapTileCache.Create(_imgRender ?? _imgSource, InvalidateVisual);
+
+        PhotoTrace.Mark("render:mipmap-cache", Photo?.FilePath,
+            _mipmapCache is null ? "not created (image too small)" : "created");
     }
 
 

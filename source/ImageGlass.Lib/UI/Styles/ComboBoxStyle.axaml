@@ -1,0 +1,105 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Style Selector="ComboBox">
+
+        <!--
+            resting chrome: TemplateBinding propagates these onto Border#Background.
+            Driving it through the control's own properties keeps the Fluent :disabled
+            state working (its conditional setter still wins over this).
+        -->
+        <Setter Property="Background" Value="{DynamicResource PhButtonBackground}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource PhButtonBorderBrush}" />
+
+        <!--
+            chevron: smaller than the Fluent 12px default. The template hard-codes the
+            glyph Width/Height as literals (which a style can't outrank), so scale it
+            down via RenderTransform instead. 0.8 ≈ 9.6px; centered so it shrinks in place.
+        -->
+        <Style Selector="^ /template/ PathIcon#DropDownGlyph">
+            <Setter Property="RenderTransformOrigin" Value="50%,50%" />
+            <Setter Property="RenderTransform">
+                <ScaleTransform ScaleX="0.8" ScaleY="0.8" />
+            </Setter>
+        </Style>
+
+        <!--  base transition on the button face. One stable Transitions collection, never swapped
+              per state: swapping it on press/release orphans in-flight fades and flashes on rapid clicks  -->
+        <Style Selector="^ /template/ Border#Background">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.04" />
+                    <BrushTransition Property="BorderBrush" Duration="0:0:0.04" />
+                </Transitions>
+            </Setter>
+        </Style>
+
+        <Style Selector="^:pointerover /template/ Border#Background">
+            <Setter Property="Background" Value="{DynamicResource PhButtonBackgroundPointerOver}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PhButtonBorderBrush}" />
+        </Style>
+
+        <!--  pressed / dropdown-open  -->
+        <Style Selector="^:pressed /template/ Border#Background">
+            <Setter Property="Background" Value="{DynamicResource PhButtonBackgroundPressed}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PhButtonBorderBrushPressed}" />
+        </Style>
+
+        <!--
+            pressed content feedback (matches PhButton.UpdateContentVisual): dim and
+            nudge the text + glyph down while the chrome stays put. Applied to the
+            content parts only, never Border#Background.
+        -->
+        <Style Selector="^:pressed /template/ ContentControl#ContentPresenter">
+            <Setter Property="Opacity" Value="0.6" />
+            <Setter Property="RenderTransform">
+                <TranslateTransform Y="0.5" />
+            </Setter>
+        </Style>
+        <Style Selector="^:pressed /template/ TextBlock#PlaceholderTextBlock">
+            <Setter Property="Opacity" Value="0.6" />
+            <Setter Property="RenderTransform">
+                <TranslateTransform Y="0.5" />
+            </Setter>
+        </Style>
+        <Style Selector="^:pressed /template/ PathIcon#DropDownGlyph">
+            <Setter Property="Opacity" Value="0.6" />
+            <!--  keep the chevron's scale (above) while nudging it down on press  -->
+            <Setter Property="RenderTransform">
+                <TransformGroup>
+                    <ScaleTransform ScaleX="0.8" ScaleY="0.8" />
+                    <TranslateTransform Y="0.5" />
+                </TransformGroup>
+            </Setter>
+        </Style>
+
+        <!--  disabled: lighter neutral fill + subtle solid border (matches TextBox)  -->
+        <Style Selector="^:disabled /template/ Border#Background">
+            <Setter Property="Background" Value="{DynamicResource PhControlFillDisabled}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PhControlBorderDisabled}" />
+        </Style>
+
+        <!--
+            disabled content: force the text to the solid base color, then dim it with the
+            shared opacity. The SVG glyph ignores composited Opacity, so it's faded to the
+            same alpha via the inheriting Svg.CurrentCss below instead.
+        -->
+        <Style Selector="^:disabled /template/ ContentControl#ContentPresenter">
+            <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+            <Setter Property="Opacity" Value="{DynamicResource PhControlContentOpacityDisabled}" />
+        </Style>
+        <Style Selector="^:disabled">
+            <Setter Property="Svg.CurrentCss" Value="{DynamicResource PhSvgCssDisabled}" />
+        </Style>
+
+    </Style>
+
+
+    <!--  ComboBoxItem  -->
+    <Style Selector="ComboBoxItem">
+        <Setter Property="Margin" Value="4, 0" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{DynamicResource ControlCornerRadius}" />
+    </Style>
+
+</Styles>

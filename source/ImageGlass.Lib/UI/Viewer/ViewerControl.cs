@@ -22,7 +22,9 @@ using Avalonia.Interactivity;
 using Avalonia.Threading;
 using ImageGlass.Common;
 using ImageGlass.Common.Extensions;
+using ImageGlass.Common.Loggers;
 using ImageGlass.Common.Photoing;
+using ImageGlass.Common.ServiceProviders;
 using ImageGlass.Common.Types;
 using ImageGlass.UI.Viewer.ZoomAndPan;
 using SkiaSharp;
@@ -38,7 +40,11 @@ public partial class ViewerControl : PhControl
     private CancellationTokenSource? _cancelPreview;
     internal InterlockedBool _isPreviewing = new(false);
     internal InterlockedBool _isFirstDraw = new(false);
+    private InterlockedBool _isRecoveringPhoto = new(false);
     internal PhotoLoadingOptions _loadingOptions = new();
+
+    // completes once the current photo is painted; null when nothing is pending
+    internal TaskCompletionSource? _firstDrawTcs;
 
     private Point? _lastMousePanPoint = null; // mouse panning
     private Point? _lockZoomSavedSrcPoint; // saved pan position for LockZoom
@@ -132,45 +138,46 @@ public partial class ViewerControl : PhControl
     }
 
 
-    private void Core_ColorProfileChanged(object? sender, EventArgs e)
+    private void Core_ColorProfileChanged(object? sender, DestColorProfileChangedEventArgs e)
     {
+        // a monitor change only re-targets later loads; reloading here would flash the viewer
+        if (!e.RequiresPhotoReload) return;
+
+        Photo? photo;
         lock (_lock)
         {
-            // 1. check if we can apply color profile
-            // skip animated images
-            if (_animator is not null) return;
-
-            // Always re-process HDR photos on monitor change (HDR↔SDR transition).
-            // For SDR photos, gate on the normal color profile check.
-            var isHdrPhoto = Photo?.Metadata?.IsHdr == true;
-            if (!isHdrPhoto && !CanApplySkiaColorSpace()) return;
-
-            // 2. dispose tile cache (will be rebuilt after next first draw)
-            _mipmapCache?.Dispose();
-            _mipmapCache = null;
-
-            SKImageRef.ImageLease? srcLease = null;
-
-            try
-            {
-                srcLease = _imgSource?.Acquire();
-                var srcImage = srcLease?.Image;
-
-                // 3. apply new color space for source image
-                if (TryApplySkiaColorSpace(srcImage, out var imgFrameColored))
-                {
-                    SKImageRef.Set(ref _imgSource, imgFrameColored);
-                }
-            }
-            finally
-            {
-                srcLease?.Dispose();
-            }
-
-            // 4. clear the render image
-            SKImageRef.Set(ref _imgRender, null);
-            InvalidateVisual();
+            // skip animated/vector; skip an in-progress load (its own load applies the current
+            // profile); skip when there's no color management to re-apply
+            if (_animator is not null || IsVectorSource()) return;
+            if (Photo is not { State: PhotoState.Loaded } || !HasColorManagement()) return;
+            photo = Photo;
         }
+
+        // Re-decode from source, keeping zoom + pan (ResetZoom: false). A fresh decode
+        // re-applies color management cleanly and re-selects the right codec, instead of
+        // compounding the conversion on the already color-managed _imgSource.
+        _ = SetPhotoAsync(photo, new PhotoLoadingOptions
+        {
+            ResetZoom = false,
+            UseCache = false,
+            Channels = Core.ColorChannels,
+        });
+    }
+
+
+    /// <summary>
+    /// Whether the current photo has color management to re-apply (HDR, always-apply, or an
+    /// embedded profile), used to skip redundant re-decodes on color-profile changes.
+    /// </summary>
+    private bool HasColorManagement()
+    {
+        var meta = Photo?.Metadata;
+        if (meta is null) return false;
+
+        return meta.IsHdr
+            || Core.Config.EnableAlwaysApplyColorProfile
+            || meta.SkiaColorSpace is not null
+            || meta.MagickColorProfile is not null;
     }
 
 
@@ -222,7 +229,7 @@ public partial class ViewerControl : PhControl
         var requestRerender = false;
 
         // set the init point for panning
-        if (p.Pointer.Type == PointerType.Mouse)
+        if (p.Pointer.Type == PointerType.Mouse && !IsThumbButtonPressed(p))
         {
             var canPanByMouse = !EnableSelection || e.Properties.IsMiddleButtonPressed;
 
@@ -261,15 +268,22 @@ public partial class ViewerControl : PhControl
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
-        // reset the panning point
-        _lastMousePanPoint = null;
+        var isThumbButton = IsThumbButton(e.InitialPressMouseButton);
 
-        var requestRerender = OnSelectionEnd(false);
-        if (requestRerender) InvalidateVisual();
+        // a thumb button owns no drag gesture, so releasing one must not end a pan or a
+        // selection that another button still has in progress
+        if (!isThumbButton)
+        {
+            // reset the panning point
+            _lastMousePanPoint = null;
+
+            var requestRerender = OnSelectionEnd(false);
+            if (requestRerender) InvalidateVisual();
+        }
 
         // dispatch mouse click action (single clicks only)
         DispatchMouseClickAction(e);
-        _mouseClickDownPoint = null;
+        if (!isThumbButton) _mouseClickDownPoint = null;
 
         base.OnPointerReleased(e);
     }
@@ -304,7 +318,9 @@ public partial class ViewerControl : PhControl
             var vDistance = _lastMousePanPoint.Value.Y - p.Position.Y;
             _lastMousePanPoint = p.Position;
 
-            requestRerender = PanTo(hDistance, vDistance, p.Position);
+            // honor the pan feature lock (drag-pan skips the RunApiAsync lock gate)
+            if (!FeatureManager.IsPanLocked())
+                requestRerender = PanTo(hDistance, vDistance, p.Position);
         }
         else
         {
@@ -362,13 +378,14 @@ public partial class ViewerControl : PhControl
             // Scroll Left/Right: Pan horizontally
             if (isScrollingHorz)
             {
-                PanTo(e.Delta.X * -50, e.Delta.Y * -50, position);
+                // this touchpad path skips the RunApiAsync lock gate, so check the pan lock here
+                if (!FeatureManager.IsPanLocked()) PanTo(e.Delta.X * -50, e.Delta.Y * -50, position);
                 return;
             }
 
             // Scroll Up/Down: Zoom
             delta *= 70;
-            _ = ZoomByDeltaToPoint(delta, position);
+            if (!FeatureManager.IsZoomLocked()) _ = ZoomByDeltaToPoint(delta, position);
             return;
         }
 
@@ -469,20 +486,6 @@ public partial class ViewerControl : PhControl
     /// </summary>
     private void DispatchMouseClickAction(PointerReleasedEventArgs e)
     {
-        if (_mouseClickDownPoint is null) return;
-        if (EnableSelection) return;
-
-        var pos = e.GetPosition(this);
-
-        // don't fire if the user dragged (threshold 5px)
-        var dragDistance = Math.Sqrt(
-            Math.Pow(pos.X - _mouseClickDownPoint.Value.X, 2)
-            + Math.Pow(pos.Y - _mouseClickDownPoint.Value.Y, 2));
-        if (dragDistance > 5) return;
-
-        // exclude nav button regions
-        if (IsInNavButtonHitArea(pos)) return;
-
         // determine the single-click event
         var clickEvent = e.InitialPressMouseButton switch
         {
@@ -494,7 +497,47 @@ public partial class ViewerControl : PhControl
         };
         if (clickEvent is null) return;
 
+
+        // the guards below only protect the left/middle drag gestures (pan, selection, nav
+        // buttons); a thumb button drives none of them, so it always dispatches
+        if (!IsThumbButton(e.InitialPressMouseButton))
+        {
+            if (_mouseClickDownPoint is null) return;
+            if (EnableSelection) return;
+
+            var pos = e.GetPosition(this);
+
+            // don't fire if the user dragged (threshold 5px)
+            var dragDistance = Math.Sqrt(
+                Math.Pow(pos.X - _mouseClickDownPoint.Value.X, 2)
+                + Math.Pow(pos.Y - _mouseClickDownPoint.Value.Y, 2));
+            if (dragDistance > 5) return;
+
+            // exclude nav button regions
+            if (IsInNavButtonHitArea(pos)) return;
+        }
+
         ViewerPointerClicked?.Invoke(this, new ViewerPointerClickEventArgs(e, clickEvent.Value));
+    }
+
+
+    /// <summary>
+    /// Checks if the press that raised the event came from a thumb button (XButton1/XButton2).
+    /// </summary>
+    private static bool IsThumbButtonPressed(PointerPoint p)
+    {
+        return p.Properties.PointerUpdateKind
+            is PointerUpdateKind.XButton1Pressed
+            or PointerUpdateKind.XButton2Pressed;
+    }
+
+
+    /// <summary>
+    /// Checks if the given mouse button is a thumb button (XButton1/XButton2).
+    /// </summary>
+    private static bool IsThumbButton(MouseButton button)
+    {
+        return button is MouseButton.XButton1 or MouseButton.XButton2;
     }
 
     #endregion // Override Methods
@@ -522,6 +565,22 @@ public partial class ViewerControl : PhControl
             if (resetZoom)
             {
                 SetZoomMode(null, isManualZoom, zoomedByResizing);
+            }
+            else if (DestRect.IsEmpty && !BitmapSize.IsEmpty)
+            {
+                // the viewport was emptied while the source was unloaded (a DPI change mid-load,
+                // e.g. dragging the window to another monitor); rebuild it
+                if (_zooming.IsManual)
+                {
+                    // clean recompute: keeps zoom + pan, skips the zoom-to-cursor path
+                    _zooming.ZoomedPoint = new();
+                    _zooming.OldFactor = _zooming.Factor;
+                    CalculateDrawingRegion();
+                }
+                else
+                {
+                    SetZoomMode(null, false, zoomedByResizing);
+                }
             }
 
             InvalidateVisual();
@@ -564,6 +623,7 @@ public partial class ViewerControl : PhControl
             // dispose native bitmap
             SKImageRef.Set(ref _imgSource, null);
             SKImageRef.Set(ref _imgRender, null);
+            SKImageRef.Set(ref _imgHdrSource, null);
         }
     }
 
@@ -581,6 +641,10 @@ public partial class ViewerControl : PhControl
             SourceKind = PhotoSource.None;
             Photo?.CancelLoading();
             Photo?.Unload();
+
+            // release a waiter whose load is being superseded
+            _firstDrawTcs?.TrySetResult();
+            _firstDrawTcs = null;
 
             // reset
             AnimationSource = AnimationSources.None;
@@ -610,6 +674,9 @@ public partial class ViewerControl : PhControl
     /// </summary>
     public async Task SetPhotoAsync(Photo? inputPhoto, PhotoLoadingOptions? options = null)
     {
+        PhotoTrace.Mark("viewer:set-photo", inputPhoto?.FilePath,
+            $"cache={options?.UseCache ?? true}, state={inputPhoto?.State}, shouldLoadFull={ShouldLoadFullResolution}");
+
         lock (_lock)
         {
             // save pan position for LockZoom before unloading
@@ -647,6 +714,60 @@ public partial class ViewerControl : PhControl
                 useCache: useCache,
                 skipLoadingEvent: !_loadingOptions.ResetZoom);
         }
+
+        await RecoverIfNothingRenderedAsync(inputPhoto);
+    }
+
+
+    /// <summary>
+    /// Recovers a photo whose load ended without a frame, which would leave the viewer blank.
+    /// </summary>
+    private async Task RecoverIfNothingRenderedAsync(Photo photo)
+    {
+        // the reload below comes back through LoadPhotoAsync, so recover only once
+        if (_isRecoveringPhoto) return;
+        if (!NeedsRecovery(photo)) return;
+
+        PhotoTrace.Mark("viewer:recover", photo.FilePath, $"state={photo.State}");
+
+        // decoded meanwhile (a concurrent loader won the race): render what is already in memory
+        if (photo.State == PhotoState.Loaded)
+        {
+            await HandlePhotoLoadedAsync(new(PhotoState.Loaded, photo, CancellationToken.None));
+            if (!NeedsRecovery(photo)) return;
+        }
+
+        // nothing usable in memory: decode again, ignoring the cache
+        PhotoTrace.Mark("viewer:recover-reload", photo.FilePath);
+        _isRecoveringPhoto.SetTrue();
+        try
+        {
+            await LoadPhotoAsync(useCache: false, skipLoadingEvent: true);
+        }
+        finally
+        {
+            _isRecoveringPhoto.SetFalse();
+        }
+    }
+
+
+    /// <summary>
+    /// Whether <paramref name="photo"/> is the photo on screen yet has nothing renderable.
+    /// </summary>
+    private bool NeedsRecovery(Photo photo)
+    {
+        // a newer navigation owns the viewer now, and its own load will paint
+        if (!ReferenceEquals(photo, Photo)) return false;
+
+        // quick browsing renders the preview on purpose, and an error is reported by its own path
+        if (!ShouldLoadFullResolution || photo.Error is not null) return false;
+
+        lock (_lock)
+        {
+            if (IsVectorSource() || _animator is not null) return false;
+
+            return _imgSource is null || _imgSource.Image.IsDisposed();
+        }
     }
 
 
@@ -656,8 +777,30 @@ public partial class ViewerControl : PhControl
     public async Task LoadPhotoAsync(bool useCache, bool skipLoadingEvent)
     {
         if (Photo is null) return;
+        var photo = Photo;
 
-        await Photo.LoadAsync(useCache, OnPhotoLoadingProgressAsync, skipLoadingEvent);
+        await photo.LoadAsync(useCache, OnPhotoLoadingProgressAsync, skipLoadingEvent);
+
+        await RecoverIfNothingRenderedAsync(photo);
+    }
+
+
+    /// <summary>
+    /// Waits until the current photo has actually been painted at least once.
+    /// Returns immediately when there is nothing pending to draw.
+    /// </summary>
+    public async Task WaitForPhotoRenderedAsync(TimeSpan timeout)
+    {
+        Task? drawTask;
+        lock (_lock)
+        {
+            drawTask = _firstDrawTcs?.Task;
+        }
+
+        if (drawTask is null || drawTask.IsCompleted) return;
+
+        // a minimized or occluded window may never produce a frame, so cap the wait
+        _ = await Task.WhenAny(drawTask, Task.Delay(timeout));
     }
 
 
@@ -689,6 +832,9 @@ public partial class ViewerControl : PhControl
         // 1. skip the preview if it's not enable or in zoom lock mode
         if (!EnableImagePreview || ZoomMode == ZoomMode.LockZoom)
         {
+            PhotoTrace.Mark("viewer:preview-skip", e.Photo.FilePath,
+                $"enablePreview={EnableImagePreview}, zoomMode={ZoomMode}");
+
             // raise event
             _isPreviewing.SetFalse();
             OnPhotoLoading(e);
@@ -707,11 +853,13 @@ public partial class ViewerControl : PhControl
             // try to get photo preview
             if (e.Photo.GalleryThumbnail is not null)
             {
+                PhotoTrace.Mark("viewer:preview-source", e.Photo.FilePath, "gallery-thumbnail");
                 using var skBmp = SkiaCodec.FromBitmap(e.Photo.GalleryThumbnail);
                 imgPreview = SkiaCodec.ToSKImage(skBmp);
             }
             else
             {
+                PhotoTrace.Mark("viewer:preview-source", e.Photo.FilePath, "preview-provider");
                 var previewHeight = Math.Min(Math.Min(DrawingArea.Height, e.Metadata.Height), 700);
                 imgPreview = await Core.PreviewProvider.GetPreviewAsync(e.Metadata, previewHeight, token);
             }
@@ -754,31 +902,19 @@ public partial class ViewerControl : PhControl
                 SKImageRef.Set(ref _imgSource, imgPreview);
 
                 var desiredSrcZoomFactor = CalculateZoomFactor(ZoomMode, e.Metadata.Width, e.Metadata.Height);
-                var previewZoomFactor = desiredSrcZoomFactor;
 
-                if (ZoomMode == ZoomMode.AutoZoom)
-                {
-                    // if the source size is bigger than viewport,
-                    // fit the thumbnail to the viewport
-                    if (desiredSrcZoomFactor < 1)
-                    {
-                        previewZoomFactor = CalculateZoomFactor(ZoomMode.ScaleToFit, BitmapSize.Width, BitmapSize.Height);
-                    }
-                    // both preview and source size are smaller than viewport
-                    else
-                    {
-                        previewZoomFactor = 1;
-                    }
-                }
-                else
-                {
-                    previewZoomFactor = CalculateZoomFactor(ZoomMode, BitmapSize.Width, BitmapSize.Height);
-                }
+                // the preview is a shrunken copy of the source, so scale it back up by however
+                // much it was shrunk; it then covers the exact area the full image will
+                var previewToSrcScale = GetPreviewToSourceScale(BitmapSize, e.Metadata);
+                var previewZoomFactor = desiredSrcZoomFactor * previewToSrcScale;
 
                 SetZoomFactor(previewZoomFactor, false);
             }
         }
 
+
+        PhotoTrace.Mark("viewer:preview-done", e.Photo.FilePath,
+            hasPreview ? $"{BitmapSize.Width}x{BitmapSize.Height}" : "no-preview");
 
         // raise event
         _isPreviewing.Set(hasPreview);
@@ -791,6 +927,23 @@ public partial class ViewerControl : PhControl
             imgPreview?.Dispose();
             imgPreview = null;
         }
+    }
+
+
+    /// <summary>
+    /// Gets how many times the preview bitmap was shrunk from the full-size photo, so the preview
+    /// can be drawn over the exact area the full image is going to occupy.
+    /// </summary>
+    private static double GetPreviewToSourceScale(Size previewSize, PhotoMetadata meta)
+    {
+        if (previewSize.Width <= 0 || previewSize.Height <= 0) return 1;
+        if (meta.Width == 0 || meta.Height == 0) return 1;
+
+        var widthScale = meta.Width / previewSize.Width;
+        var heightScale = meta.Height / previewSize.Height;
+
+        // Min keeps the preview inside the final footprint when the aspect ratios differ slightly
+        return Math.Max(1, Math.Min(widthScale, heightScale));
     }
 
 
@@ -809,6 +962,9 @@ public partial class ViewerControl : PhControl
         SKImage? imgFrame = null;
         AnimatorImpl? animator = null;
         var hasSource = false;
+
+        // raw pre-tone-map HDR frame to keep for live re-tone-mapping (null = don't retain)
+        SKImage? hdrRawToRetain = null;
 
         try
         {
@@ -834,11 +990,15 @@ public partial class ViewerControl : PhControl
                 // vector (SVG) source
                 if (e.Photo.Bitmap is SkiaVectorSource)
                 {
+                    PhotoTrace.Mark("viewer:loaded-source", e.Photo.FilePath, "vector");
                     hasSource = true;
                 }
                 // native bitmap is an animated bitmap
                 else if (e.Photo.Bitmap is AnimatorImpl skAnimator)
                 {
+                    PhotoTrace.Mark("viewer:loaded-source", e.Photo.FilePath,
+                        $"animator ({skAnimator.GetType().Name})");
+
                     // update bitmap size
                     BitmapSize = e.Photo.Size;
 
@@ -848,25 +1008,47 @@ public partial class ViewerControl : PhControl
                 // native bitmap is a single-frame bitmap
                 else
                 {
+                    PhotoTrace.Mark("viewer:loaded-source", e.Photo.FilePath, "single-frame");
+
                     // update bitmap size
                     BitmapSize = e.Photo.Size;
 
                     var frameToLoad = (uint)Math.Max(0, e.Photo.FrameIndex);
                     imgFrame = await e.Photo.GetFrameAsync(frameToLoad);
 
-                    // apply color space
-                    if (TryApplySkiaColorSpace(imgFrame, out var imgFrameColored))
+                    // apply color space off the UI thread; the pin keeps the frame alive if the
+                    // user navigates away mid-pass
+                    SKImage? imgFrameColored;
+                    using (e.Photo.PinBitmap())
                     {
-                        // don't dispose the clipboard photo
-                        if (!e.Photo.IsClipboard)
+                        imgFrameColored = await ApplySkiaColorSpaceAsync(imgFrame, e.Photo.Metadata);
+                    }
+
+                    if (imgFrameColored is not null)
+                    {
+                        PhotoTrace.Mark("viewer:color-managed", e.Photo.FilePath,
+                            $"applied (hdrToneMap={Core.Config.EnableHdrToneMapping && e.Photo.Metadata.IsHdr}, srcProfile={(string.IsNullOrEmpty(e.Photo.Metadata.ColorProfileName) ? "none" : e.Photo.Metadata.ColorProfileName)})");
+
+                        // retain the pre-tone-map HDR frame for live re-tone-mapping, else free it
+                        // (never dispose the clipboard photo's frame)
+                        if (_liveHdrToneMapping && e.Photo.Metadata.IsHdr && !e.Photo.IsClipboard)
+                        {
+                            hdrRawToRetain = imgFrame;
+                        }
+                        else if (!e.Photo.IsClipboard)
                         {
                             imgFrame?.Dispose();
                         }
 
                         imgFrame = imgFrameColored;
                     }
+                    else
+                    {
+                        PhotoTrace.Mark("viewer:color-managed", e.Photo.FilePath, "skipped");
+                    }
 
-                    hasSource = imgFrame != null;
+                    // IsDisposed, not null: a dead frame renders nothing yet claims the photo is shown
+                    hasSource = !imgFrame.IsDisposed();
                 }
             }
 
@@ -891,6 +1073,9 @@ public partial class ViewerControl : PhControl
                 // 5. calculate the source viewport to match with the preview
                 if (hasSource)
                 {
+                    // arm the render-completion signal before the draw is queued
+                    _firstDrawTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
                     // 5.1 set source based on type
                     if (e.Photo.Bitmap is SkiaVectorSource vectorSource)
                     {
@@ -900,6 +1085,9 @@ public partial class ViewerControl : PhControl
                     {
                         _isFirstDraw.SetTrue();
                         SKImageRef.Set(ref _imgSource, imgFrame);
+
+                        // keep (or clear) the retained raw HDR frame for live re-tone-mapping
+                        SKImageRef.Set(ref _imgHdrSource, hdrRawToRetain);
                     }
 
 
@@ -986,10 +1174,20 @@ public partial class ViewerControl : PhControl
 
         void HandleCancelLoaded(bool userCancelled)
         {
+            // no draw is coming, release any waiter
+            lock (_lock)
+            {
+                _firstDrawTcs?.TrySetResult();
+            }
+
             if (userCancelled) e.Photo.Unload();
 
             imgFrame?.Dispose();
             imgFrame = null;
+
+            // free the retained raw HDR frame if we hadn't stored it yet
+            hdrRawToRetain?.Dispose();
+            hdrRawToRetain = null;
 
             animator?.Dispose();
             animator = null;
@@ -1023,6 +1221,17 @@ public partial class ViewerControl : PhControl
             SourceKind = PhotoSource.Native;
             SKImageRef.Set(ref _imgSource, renderedFrame);
             SKImageRef.Set(ref _imgRender, renderedFrame, _imgSource);
+
+            // animated sources have no image at load time, so the first render pass consumes
+            // _isFirstDraw without drawing; the first frame is the real render signal
+            _firstDrawTcs?.TrySetResult();
+        }
+
+        // variable-size frames: each frame is its own canvas
+        if (!renderedFrame.IsDisposed()
+            && (renderedFrame.Width != BitmapSize.Width || renderedFrame.Height != BitmapSize.Height))
+        {
+            RefitForFrameSize(new Size(renderedFrame.Width, renderedFrame.Height));
         }
 
         InvalidateVisual();
@@ -1077,12 +1286,14 @@ public partial class ViewerControl : PhControl
         var imgFrame = await Photo.GetFrameAsync(frameIndex);
         if (imgFrame is null) return;
 
-        // apply color space
-        var sourceImg = imgFrame;
-        if (TryApplySkiaColorSpace(imgFrame, out var colored))
+        // apply color space off the UI thread
+        SKImage? colored;
+        using (Photo.PinBitmap())
         {
-            sourceImg = colored;
+            colored = await ApplySkiaColorSpaceAsync(imgFrame, Photo.Metadata);
         }
+
+        var sourceImg = colored ?? imgFrame;
 
         lock (_lock)
         {
@@ -1092,10 +1303,23 @@ public partial class ViewerControl : PhControl
             SKImageRef.Set(ref _imgRender, null);
             SKImageRef.Set(ref _imgSource, sourceImg);
             _isFirstDraw.SetTrue();
-            BitmapSize = Photo.Size;
         }
 
-        Refresh(resetZoom: _loadingOptions.ResetZoom);
+        // variable-size frames: each frame is its own canvas. Photo.Size still reports
+        // the metadata size for animated sources, so measure the decoded frame itself.
+        var frameSize = sourceImg.IsDisposed()
+            ? Photo.Size
+            : new Size(sourceImg.Width, sourceImg.Height);
+
+        if (frameSize != BitmapSize)
+        {
+            RefitForFrameSize(frameSize);
+            InvalidateVisual();
+        }
+        else
+        {
+            Refresh(resetZoom: _loadingOptions.ResetZoom);
+        }
 
         // emit frame changed event
         OnPhotoFrameChanged();

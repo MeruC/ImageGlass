@@ -16,8 +16,8 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-using System.Text.Json.Serialization;
 using ImageGlass.Common.Types.JsonTypeConverters;
+using System.Text.Json.Serialization;
 
 namespace ImageGlass.Common.Types;
 
@@ -30,6 +30,23 @@ public enum PathType
     File,
     Dir,
     Unknown,
+}
+
+
+/// <summary>
+/// Registry scope used to register the app as the default photo viewer.
+/// </summary>
+public enum DefaultAppScope
+{
+    /// <summary>
+    /// Per-user registration under <c>HKEY_CURRENT_USER</c> (portable / user-profile install).
+    /// </summary>
+    CurrentUser,
+
+    /// <summary>
+    /// Per-machine registration under <c>HKEY_LOCAL_MACHINE</c> (all-users / Program Files install).
+    /// </summary>
+    LocalMachine,
 }
 
 
@@ -101,6 +118,27 @@ public enum ImageOrderType
 {
     Asc = 0,
     Desc = 1,
+}
+
+
+/// <summary>
+/// How the app behaves while browsing photos.
+/// **If we need to rename, we MUST update the language string too.
+/// Because the name is also language keyword!
+/// </summary>
+public enum BrowsingMode
+{
+    /// <summary>
+    /// Navigation never waits: a photo still loading is replaced by the next one,
+    /// showing a preview while the user keeps browsing.
+    /// </summary>
+    Turbo = 0,
+
+    /// <summary>
+    /// Navigation is ignored until the current photo is fully loaded and rendered,
+    /// so every photo browsed to is displayed in full.
+    /// </summary>
+    Sequential = 1,
 }
 
 

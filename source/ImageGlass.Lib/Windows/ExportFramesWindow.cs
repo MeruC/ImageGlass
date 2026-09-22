@@ -1,4 +1,4 @@
-﻿/*
+/*
 ImageGlass - A Fast, Seamless Photo Viewer
 Copyright (C) 2010 - 2026 DUONG DIEU PHAP
 Project homepage: https://imageglass.org
@@ -19,6 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 using Avalonia.Threading;
 using ImageGlass.Common.Localization;
 using ImageGlass.Common.Photoing;
+using ImageGlass.Common.Types;
 using ImageGlass.UI.Windowing;
 using System;
 using System.IO;
@@ -44,6 +45,8 @@ public partial class ExportFramesWindow : ModalWindow
         _srcFilePath = srcFilePath;
         _destDirPath = destDirPath;
         ShowInTaskbar = true;
+        SizeToContent = Avalonia.Controls.SizeToContent.Height;
+        Width = 600;
 
 
         Description = srcFilePath;
@@ -65,8 +68,8 @@ public partial class ExportFramesWindow : ModalWindow
     {
         base.OnIgLanguageChanged();
 
-        Title = Core.Lang[LangId.FrmExportFrames_Title];
-        Heading = Core.Lang[LangId.FrmExportFrames_Title];
+        Title = Core.Lang[LangId._Title];
+        Heading = Core.Lang[LangId._Title];
         Button1Text = Core.Lang[LangId._Start];
         Button2Text = Core.Lang[LangId._Cancel];
     }
@@ -87,8 +90,9 @@ public partial class ExportFramesWindow : ModalWindow
 
     protected override void OnDialogCancelled(DialogEventArgs e)
     {
+        // do NOT dispose: the export is still unwinding and codec/file writes
+        // registered on this token would throw ObjectDisposedException
         _cancel?.Cancel();
-        _cancel?.Dispose();
 
         base.OnDialogCancelled(e);
     }
@@ -97,7 +101,6 @@ public partial class ExportFramesWindow : ModalWindow
     protected override void OnDialogAborted()
     {
         _cancel?.Cancel();
-        _cancel?.Dispose();
 
         base.OnDialogAborted();
     }
@@ -125,51 +128,96 @@ public partial class ExportFramesWindow : ModalWindow
         IsProgressVisible = true;
         IsProgressIndeterminate = true;
         ProgressValue = 0;
+        Note = null;
 
+        var exportedCount = 0;
 
-        _ = Task.Factory.StartNew(async () =>
+        // must be awaited: an unawaited failure here becomes an unobserved
+        // task exception and crashes the app from the finalizer thread
+        try
         {
-            // start exporting frames
-            await foreach (var info in MagickCodec.SaveFramesAsync(srcFilePath, destDirPath, _cancel.Token))
+            await Task.Factory.StartNew(async () =>
             {
-                Dispatcher.UIThread.Post(() =>
+                // start exporting frames
+                await foreach (var info in PhotoFrameExporter.SaveFramesAsync(srcFilePath, destDirPath, _cancel.Token))
                 {
-                    var percent = Math.Round((info.FrameNumber * 100f) / info.FrameCount, 0);
+                    exportedCount++;
 
-                    IsProgressIndeterminate = false;
-                    ProgressValue = percent;
-                    Title = $"{Core.Lang[LangId.FrmExportFrames_Title]} ({percent}%)";
-
-                    // done
-                    if (info.FrameNumber == info.FrameCount)
+                    Dispatcher.UIThread.Post(() =>
                     {
-                        _btn1.IsEnabled = true;
-                        _btn1.Focus(Avalonia.Input.NavigationMethod.Tab);
-                        IsButton1Visible = true;
-                        Button1Text = Core.Lang[LangId.FrmExportFrames_OpenOutputFolder];
+                        var percent = Math.Round((info.FrameNumber * 100f) / info.FrameCount, 0);
 
-                        Button2Text = Core.Lang[LangId._Close];
-                        Description = string.Format(Core.Lang[LangId.FrmExportFrames_ExportDone],
-                            info.FrameNumber,
-                            $"\"{destDirPath}\"");
+                        IsProgressIndeterminate = false;
+                        ProgressValue = percent;
+                        Title = $"{Core.Lang[LangId._Title]} ({percent}%)";
 
-                        IsProgressVisible = false;
-                        _isDone = true;
-                    }
+                        // done
+                        if (info.FrameNumber == info.FrameCount)
+                        {
+                            _btn1.IsEnabled = true;
+                            _btn1.Focus(Avalonia.Input.NavigationMethod.Tab);
+                            IsButton1Visible = true;
+                            Button1Text = Core.Lang[LangId._OpenOutputFolder];
 
-                    // in progress
-                    else
-                    {
-                        var frameFilePath = Path.Combine(destDirPath, info.FileName);
+                            Button2Text = Core.Lang[LangId._Close];
+                            Description = string.Format(Core.Lang[LangId._ExportDone],
+                                info.FrameNumber,
+                                $"\"{destDirPath}\"");
 
-                        Description = string.Format(Core.Lang[LangId.FrmExportFrames_Exporting],
-                            info.FrameNumber,
-                            info.FrameCount,
-                            $"\"{frameFilePath}\"");
-                    }
-                });
-            }
-        }, _cancel.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
+                            IsProgressVisible = false;
+                            _isDone = true;
+                        }
+
+                        // in progress
+                        else
+                        {
+                            var frameFilePath = Path.Combine(destDirPath, info.FileName);
+
+                            Description = string.Format(Core.Lang[LangId._Exporting],
+                                info.FrameNumber,
+                                info.FrameCount,
+                                $"\"{frameFilePath}\"");
+                        }
+                    });
+                }
+            }, _cancel.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
+        }
+        catch (OperationCanceledException) { return; }
+        catch (Exception ex)
+        {
+            ShowError(ex.Message);
+            return;
+        }
+
+        // no codec could read the frames, and the user did not cancel
+        if (exportedCount == 0 && !_cancel.IsCancellationRequested)
+        {
+            ShowError(Core.Lang[LangId._NotSupported]);
+        }
+    }
+
+
+    /// <summary>
+    /// Stops the progress and shows the export failure.
+    /// </summary>
+    private void ShowError(string message)
+    {
+        IsProgressVisible = false;
+        IsProgressIndeterminate = false;
+
+        Title = Core.Lang[LangId._Title];
+        Heading = message;
+        Description = _srcFilePath;
+
+        // set error icon
+        Thumbnail = null;
+        ThumbnailIcon = StockIconId.Error;
+        LoadThumbnailIconSource();
+
+        IsButton1Visible = false;
+        IsButton2Visible = true;
+        Button2Text = Core.Lang[LangId._Close];
+        _btn2.Focus(Avalonia.Input.NavigationMethod.Tab);
     }
 
     #endregion // Private Methods

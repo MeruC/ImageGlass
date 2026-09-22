@@ -63,12 +63,9 @@ public static class Dir
     /// </summary>
     public static string Temporary { get; } = "_temp";
 
-
-#if DEBUG
     /// <summary>
     /// Logging should not be to the temporary folder, as it is deleted on shutdown
     /// </summary>
-    public static string Log { get; } = "_log";
-#endif
+    public static string Logs { get; } = "_logs";
 
 }

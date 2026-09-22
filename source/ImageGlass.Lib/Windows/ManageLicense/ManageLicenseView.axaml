@@ -1,0 +1,205 @@
+<ui:PhControl
+    x:Class="ImageGlass.Common.Windows.ManageLicenseView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:types="using:ImageGlass.Common.Types"
+    xmlns:ui="using:ImageGlass.UI"
+    xmlns:windows="using:ImageGlass.Common.Windows"
+    mc:Ignorable="d"
+    d:DesignWidth="460"
+    HorizontalContentAlignment="Stretch">
+
+    <StackPanel Orientation="Vertical">
+
+        <!--  Header: logo + title on a 45deg accent gradient  -->
+        <Border x:Name="PART_Header">
+            <Border.Background>
+                <LinearGradientBrush Opacity="0.3" StartPoint="0%,100%" EndPoint="100%,0%">
+                    <GradientStop Offset="0" Color="{DynamicResource SystemAccentColorDark3}" />
+                    <GradientStop Offset="1" Color="{DynamicResource SystemAccentColorLight3}" />
+                </LinearGradientBrush>
+            </Border.Background>
+
+            <Panel>
+                <!--  first child, so the stars stay behind the logo and heading  -->
+                <ui:PhStarsOverlay x:Name="PART_HeroStars" />
+
+                <StackPanel
+                    Margin="24,22"
+                    HorizontalAlignment="Center"
+                    Orientation="Vertical"
+                    Spacing="12">
+                    <ui:PhLogo
+                        x:Name="PART_Logo"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        LogoSize="64" />
+                    <ui:PhTextBlock
+                        x:Name="PART_LblHeading"
+                        VerticalAlignment="Center"
+                        FontSize="{x:Static types:Const.FONT_SIZE_TITLE}"
+                        FontWeight="SemiBold" />
+                </StackPanel>
+            </Panel>
+        </Border>
+
+
+        <!--  Upgrade mode  -->
+        <windows:UpgradeToProControl x:Name="PART_UpgradeBody" Margin="0,20,0,0" />
+
+
+        <!--  Manage mode  -->
+        <StackPanel x:Name="PART_ManageBody" Margin="0,20,0,0">
+            <Grid
+                RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
+                ColumnDefinitions="Auto,*"
+                HorizontalAlignment="Center">
+                <ui:PhTextBlock
+                    x:Name="PART_LblLicensedTo"
+                    Grid.Row="0"
+                    Grid.Column="0"
+                    Margin="0,4,16,4"
+                    FontWeight="SemiBold"
+                    LangKey="Menu_MnuManageLicense_LicensedTo" />
+                <SelectableTextBlock
+                    x:Name="PART_ValLicensedTo"
+                    Grid.Row="0"
+                    Grid.Column="1"
+                    Margin="0,4"
+                    TextWrapping="Wrap" />
+
+                <ui:PhTextBlock
+                    x:Name="PART_LblPlan"
+                    Grid.Row="1"
+                    Grid.Column="0"
+                    Margin="0,4,16,4"
+                    FontWeight="SemiBold"
+                    LangKey="Menu_MnuManageLicense_Plan" />
+                <ui:PhButton
+                    x:Name="PART_BtnPlan"
+                    Grid.Row="1"
+                    Grid.Column="1"
+                    Margin="0,4"
+                    Variant="Link" />
+
+                <ui:PhTextBlock
+                    x:Name="PART_LblSeats"
+                    Grid.Row="2"
+                    Grid.Column="0"
+                    Margin="0,4,16,4"
+                    FontWeight="SemiBold"
+                    LangKey="Menu_MnuManageLicense_Seats" />
+                <SelectableTextBlock
+                    x:Name="PART_ValSeats"
+                    Grid.Row="2"
+                    Grid.Column="1"
+                    Margin="0,4"
+                    TextWrapping="Wrap" />
+
+                <ui:PhTextBlock
+                    x:Name="PART_LblExpires"
+                    Grid.Row="3"
+                    Grid.Column="0"
+                    Margin="0,4,16,4"
+                    FontWeight="SemiBold"
+                    LangKey="Menu_MnuManageLicense_Expires" />
+                <SelectableTextBlock
+                    x:Name="PART_ValExpires"
+                    Grid.Row="3"
+                    Grid.Column="1"
+                    Margin="0,4"
+                    TextWrapping="Wrap" />
+
+                <ui:PhTextBlock
+                    x:Name="PART_LblLicenseId"
+                    Grid.Row="4"
+                    Grid.Column="0"
+                    Margin="0,4,16,4"
+                    FontWeight="SemiBold"
+                    LangKey="Menu_MnuManageLicense_LicenseId" />
+                <SelectableTextBlock
+                    x:Name="PART_ValLicenseId"
+                    Grid.Row="4"
+                    Grid.Column="1"
+                    Margin="0,4"
+                    TextWrapping="Wrap" />
+
+                <!--  only a store build names where the license came from  -->
+                <ui:PhTextBlock
+                    x:Name="PART_LblSource"
+                    Grid.Row="5"
+                    Grid.Column="0"
+                    Margin="0,4,16,4"
+                    FontWeight="SemiBold"
+                    LangKey="Menu_MnuManageLicense_Source" />
+                <SelectableTextBlock
+                    x:Name="PART_ValSource"
+                    Grid.Row="5"
+                    Grid.Column="1"
+                    Margin="0,4"
+                    TextWrapping="Wrap" />
+            </Grid>
+
+
+
+            <Border
+                x:Name="PART_ManageDivider"
+                Height="1"
+                Margin="0,20,0,0"
+                Background="{DynamicResource IG_BorderNeutralBrush}" />
+
+
+            <!--  CTA buttons  -->
+            <Border Padding="24,20" Background="{DynamicResource IG_BackgroundNeutralBrush}">
+                <StackPanel Spacing="8">
+                    <!--  Store builds only  -->
+                    <ui:PhTextBlock
+                        x:Name="PART_LblExportNote"
+                        MaxWidth="420"
+                        IsVisible="False"
+                        LangKey="Menu_MnuManageLicense_ExportNote"
+                        TextAlignment="Center"
+                        TextWrapping="Wrap" />
+
+                    <StackPanel HorizontalAlignment="Center" Spacing="8">
+                        <!--  Store builds only  -->
+                        <ui:PhButton
+                            x:Name="PART_BtnExportLicense"
+                            Width="300"
+                            HorizontalContentAlignment="Stretch"
+                            IsVisible="False">
+                            <ui:PhTextBlock
+                                LangKey="Menu_MnuManageLicense_ExportLicense"
+                                TextAlignment="Center"
+                                TextTrimming="CharacterEllipsis" />
+                        </ui:PhButton>
+
+
+                        <ui:PhButton
+                            x:Name="PART_BtnChangeLicense"
+                            Width="300"
+                            HorizontalContentAlignment="Stretch">
+                            <ui:PhTextBlock
+                                LangKey="Menu_MnuManageLicense_ChangeLicense"
+                                TextAlignment="Center"
+                                TextTrimming="CharacterEllipsis" />
+                        </ui:PhButton>
+                        <ui:PhButton
+                            x:Name="PART_BtnUpgradePlan"
+                            Width="300"
+                            HorizontalContentAlignment="Stretch">
+                            <ui:PhTextBlock
+                                LangKey="Menu_MnuManageLicense_UpgradePlan"
+                                TextAlignment="Center"
+                                TextTrimming="CharacterEllipsis" />
+                        </ui:PhButton>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+
+
+    </StackPanel>
+</ui:PhControl>

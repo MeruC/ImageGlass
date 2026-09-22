@@ -1,0 +1,43 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ResourceDictionary.ThemeDictionaries>
+
+        <ResourceDictionary x:Key="Light">
+            <!--  OFF: fill  -->
+            <SolidColorBrush x:Key="ToggleSwitchFillOff" Color="#0A000000" />
+            <SolidColorBrush x:Key="ToggleSwitchFillOffPointerOver" Color="#14000000" />
+            <SolidColorBrush x:Key="ToggleSwitchFillOffPressed" Color="#1F000000" />
+            <SolidColorBrush x:Key="ToggleSwitchFillOffDisabled" Color="#0A000000" />
+            <!--  OFF: ring  -->
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOff" Color="#5C000000" />
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOffPointerOver" Color="#78000000" />
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOffPressed" Color="#78000000" />
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOffDisabled" Color="#1F000000" />
+            <!--  OFF: knob  -->
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOff" Color="#66000000" />
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOffPointerOver" Color="#85000000" />
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOffPressed" Color="#85000000" />
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOffDisabled" Color="#59000000" />
+        </ResourceDictionary>
+
+        <ResourceDictionary x:Key="Dark">
+            <!--  OFF: fill  -->
+            <SolidColorBrush x:Key="ToggleSwitchFillOff" Color="#10FFFFFF" />
+            <SolidColorBrush x:Key="ToggleSwitchFillOffPointerOver" Color="#1CFFFFFF" />
+            <SolidColorBrush x:Key="ToggleSwitchFillOffPressed" Color="#28FFFFFF" />
+            <SolidColorBrush x:Key="ToggleSwitchFillOffDisabled" Color="#10FFFFFF" />
+            <!--  OFF: ring  -->
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOff" Color="#63FFFFFF" />
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOffPointerOver" Color="#8BFFFFFF" />
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOffPressed" Color="#8BFFFFFF" />
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOffDisabled" Color="#28FFFFFF" />
+            <!--  OFF: knob  -->
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOff" Color="#99FFFFFF" />
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOffPointerOver" Color="#C5FFFFFF" />
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOffPressed" Color="#C5FFFFFF" />
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOffDisabled" Color="#66FFFFFF" />
+        </ResourceDictionary>
+
+    </ResourceDictionary.ThemeDictionaries>
+
+</ResourceDictionary>

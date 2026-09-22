@@ -87,6 +87,7 @@ project.lock.json
 project.fragment.lock.json
 artifacts/
 .artifacts/
+__artifacts/
 
 # Flatpak build cache (created by flatpak-builder)
 .flatpak-builder/
@@ -271,6 +272,9 @@ ClientBin/
 *.jfm
 *.pfx
 *.publishsettings
+
+# Signed ImageGlass Pro licenses, including the one bundled into the Store package
+*.iglicense.json
 orleans.codegen.cs
 
 # Including strong name files can present a security risk

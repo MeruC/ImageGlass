@@ -1,0 +1,134 @@
+<Styles
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:coll="using:System.Collections"
+    xmlns:types="using:ImageGlass.Common.Types">
+
+    <Styles.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <!--  focused: field lifts to a solid fill  -->
+                    <SolidColorBrush x:Key="PhTextBoxBackgroundFocused" Color="#FFFFFFFF" />
+
+                    <!--  faint top/side edge shared by the focused + error underline brushes  -->
+                    <Color x:Key="PhTextBoxBorderEdgeColor">#0F000000</Color>
+
+                    <!--  focused border: accent at the bottom edge  -->
+                    <LinearGradientBrush x:Key="PhTextBoxBorderBrushFocused" StartPoint="0%,0%" EndPoint="0%,100%">
+                        <GradientStop Offset="0.0" Color="{DynamicResource PhTextBoxBorderEdgeColor}" />
+                        <GradientStop Offset="0.85" Color="{DynamicResource PhTextBoxBorderEdgeColor}" />
+                        <GradientStop Offset="0.95" Color="{DynamicResource SystemAccentColor}" />
+                        <GradientStop Offset="1.0" Color="{DynamicResource SystemAccentColor}" />
+                    </LinearGradientBrush>
+
+                    <!--  error border: critical color at the bottom edge  -->
+                    <LinearGradientBrush x:Key="PhTextBoxBorderBrushError" StartPoint="0%,0%" EndPoint="0%,100%">
+                        <GradientStop Offset="0.0" Color="{DynamicResource PhTextBoxBorderEdgeColor}" />
+                        <GradientStop Offset="0.85" Color="{DynamicResource PhTextBoxBorderEdgeColor}" />
+                        <GradientStop Offset="0.95" Color="{DynamicResource IG_TextDangerColor}" />
+                        <GradientStop Offset="1.0" Color="{DynamicResource IG_TextDangerColor}" />
+                    </LinearGradientBrush>
+                </ResourceDictionary>
+
+                <ResourceDictionary x:Key="Dark">
+                    <!--  focused: slightly more opaque fill so the field reads as active  -->
+                    <SolidColorBrush x:Key="PhTextBoxBackgroundFocused" Color="#1FFFFFFF" />
+
+                    <!--  faint top/side edge shared by the focused + error underline brushes  -->
+                    <Color x:Key="PhTextBoxBorderEdgeColor">#14FFFFFF</Color>
+
+                    <!--  focused border: accent at the bottom edge  -->
+                    <LinearGradientBrush x:Key="PhTextBoxBorderBrushFocused" StartPoint="0%,0%" EndPoint="0%,100%">
+                        <GradientStop Offset="0.0" Color="{DynamicResource PhTextBoxBorderEdgeColor}" />
+                        <GradientStop Offset="0.85" Color="{DynamicResource PhTextBoxBorderEdgeColor}" />
+                        <GradientStop Offset="0.95" Color="{DynamicResource SystemAccentColorLight3}" />
+                        <GradientStop Offset="1.0" Color="{DynamicResource SystemAccentColorLight3}" />
+                    </LinearGradientBrush>
+
+                    <!--  error border: critical color at the bottom edge  -->
+                    <LinearGradientBrush x:Key="PhTextBoxBorderBrushError" StartPoint="0%,0%" EndPoint="0%,100%">
+                        <GradientStop Offset="0.0" Color="{DynamicResource PhTextBoxBorderEdgeColor}" />
+                        <GradientStop Offset="0.85" Color="{DynamicResource PhTextBoxBorderEdgeColor}" />
+                        <GradientStop Offset="0.95" Color="{DynamicResource IG_TextDangerColor}" />
+                        <GradientStop Offset="1.0" Color="{DynamicResource IG_TextDangerColor}" />
+                    </LinearGradientBrush>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Styles.Resources>
+
+
+    <Style Selector="TextBox">
+
+        <!--  resting  -->
+        <Setter Property="Background" Value="{DynamicResource PhButtonBackground}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource PhButtonBorderBrush}" />
+
+        <!--  error message: small text in the critical color (overrides the Fluent default)  -->
+        <Style Selector="^ /template/ DataValidationErrors">
+            <Setter Property="ErrorTemplate">
+                <DataTemplate x:DataType="coll:IEnumerable">
+                    <ItemsControl Foreground="{DynamicResource IG_TextDangerBrush}" ItemsSource="{CompiledBinding}">
+                        <ItemsControl.Styles>
+                            <Style Selector="TextBlock">
+                                <Setter Property="TextWrapping" Value="Wrap" />
+                                <Setter Property="FontSize" Value="{x:Static types:Const.FONT_SIZE_SMALL}" />
+                            </Style>
+                        </ItemsControl.Styles>
+                    </ItemsControl>
+                </DataTemplate>
+            </Setter>
+        </Style>
+
+        <!--  tighten the gap between the field and its error message  -->
+        <Style Selector="^ /template/ DataValidationErrors /template/ ContentControl#InlineDataValidationContentControl">
+            <Setter Property="Margin" Value="0,1,0,0" />
+        </Style>
+
+        <!--  hover/focus transition on the border part  -->
+        <Style Selector="^ /template/ Border#PART_BorderElement">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.1" />
+                    <BrushTransition Property="BorderBrush" Duration="0:0:0.1" />
+                </Transitions>
+            </Setter>
+        </Style>
+
+        <!--  hover  -->
+        <Style Selector="^:pointerover /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="{DynamicResource PhButtonBackgroundPointerOver}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PhButtonBorderBrush}" />
+        </Style>
+
+        <!--  disabled: lighter neutral fill + subtle solid border, dimmed text  -->
+        <Style Selector="^:disabled /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="{DynamicResource PhControlFillDisabled}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PhControlBorderDisabled}" />
+        </Style>
+        <!--  disabled text: solid base color (matches ComboBox), wins over the Fluent disabled foreground  -->
+        <Style Selector="^:disabled">
+            <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+        </Style>
+        <!--  dim only the text part by the shared opacity so the fill/border keep their own disabled brushes  -->
+        <Style Selector="^:disabled /template/ TextPresenter#PART_TextPresenter">
+            <Setter Property="Opacity" Value="{DynamicResource PhControlContentOpacityDisabled}" />
+        </Style>
+
+        <!--  error: critical underline for rest/hover/disabled (wins over them, loses to focus)  -->
+        <Style Selector="^:error /template/ Border#PART_BorderElement">
+            <Setter Property="BorderBrush" Value="{DynamicResource PhTextBoxBorderBrushError}" />
+            <Setter Property="BorderThickness" Value="1,1,1,2" />
+        </Style>
+
+        <!--  focused (active): solid fill + accent underline (wins over the error border)  -->
+        <Style Selector="^:focus-within /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="{DynamicResource PhTextBoxBackgroundFocused}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PhTextBoxBorderBrushFocused}" />
+            <Setter Property="BorderThickness" Value="1,1,1,2" />
+        </Style>
+
+    </Style>
+
+</Styles>

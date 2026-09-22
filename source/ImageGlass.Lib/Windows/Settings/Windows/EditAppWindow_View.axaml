@@ -1,0 +1,44 @@
+<ui:PhControl
+    x:Class="ImageGlass.Common.Windows.EditAppWindowView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="using:ImageGlass.UI"
+    mc:Ignorable="d"
+    d:DesignWidth="480">
+
+    <StackPanel Orientation="Vertical" Spacing="14">
+
+        <!--  File extension  -->
+        <StackPanel Spacing="5">
+            <ui:PhTextBlock LangKey="_FileExtension" />
+            <ui:PhTextBox
+                x:Name="PART_Extension"
+                IsRequired="True"
+                PlaceholderText=".jpg;.png;.svg" />
+        </StackPanel>
+
+        <!--  App name  -->
+        <StackPanel Spacing="5">
+            <ui:PhTextBlock LangKey="Settings_EditApps_AppName" />
+            <ui:PhTextBox
+                x:Name="PART_AppName"
+                IsRequired="True"
+                PlaceholderText="{OnPlatform 'My Editor',
+                                             Windows='MS Paint',
+                                             x:TypeArguments=x:String}" />
+        </StackPanel>
+
+        <!--  Executable, argument & command preview  -->
+        <ui:PhActionEditorControl
+            x:Name="PART_Action"
+            ArgumentPlaceholder="&lt;file&gt;"
+            ExecutablePlaceholder="{OnPlatform '/path/to/editor',
+                                               Windows='mspaint.exe',
+                                               macOS='/Applications/MyEditor.app',
+                                               x:TypeArguments=x:String}"
+            ShowHotkeys="False" />
+
+    </StackPanel>
+</ui:PhControl>

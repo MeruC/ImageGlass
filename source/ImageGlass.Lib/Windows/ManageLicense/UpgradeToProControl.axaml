@@ -1,0 +1,97 @@
+<ui:PhControl
+    x:Class="ImageGlass.Common.Windows.UpgradeToProControl"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="using:ImageGlass.UI"
+    mc:Ignorable="d"
+    d:DesignWidth="460"
+    x:Name="Root"
+    HorizontalContentAlignment="Stretch">
+
+    <!--  All text is localized in code so a host can preview another language pack  -->
+
+    <StackPanel Orientation="Vertical">
+        <ui:PhTextBlock
+            x:Name="PART_LblDescription"
+            MaxWidth="420"
+            HorizontalAlignment="Center"
+            TextAlignment="Center"
+            TextWrapping="Wrap" />
+
+        <!--  shown instead when a valid license does not cover this app version  -->
+        <ui:PhTextBlock
+            x:Name="PART_LblOutOfScope"
+            MaxWidth="420"
+            HorizontalAlignment="Center"
+            IsVisible="False"
+            TextAlignment="Center"
+            TextWrapping="Wrap" />
+
+        <!--  shown instead when an authentic license has passed its expiry  -->
+        <ui:PhTextBlock
+            x:Name="PART_LblExpired"
+            MaxWidth="420"
+            HorizontalAlignment="Center"
+            IsVisible="False"
+            TextAlignment="Center"
+            TextWrapping="Wrap" />
+
+        <!--  link to the feature comparison on the website  -->
+        <ui:PhButton
+            x:Name="PART_BtnViewFeatures"
+            Margin="0,8,0,0"
+            HorizontalAlignment="Center"
+            Variant="Link" />
+
+
+        <!--  shown by default; a host embedding the control can drop it  -->
+        <Border
+            x:Name="PART_Divider"
+            Height="1"
+            Margin="0,20,0,0"
+            Background="{DynamicResource IG_BorderNeutralBrush}"
+            IsVisible="{CompiledBinding #Root.IsDividerVisible}" />
+
+
+        <!--  CTA buttons: square by default (full-bleed dialog section), rounded when the host asks  -->
+        <Border
+            x:Name="PART_Cta"
+            Padding="24,20"
+            Background="{DynamicResource IG_BackgroundNeutralBrush}"
+            CornerRadius="{CompiledBinding #Root.CtaCornerRadius}">
+            <StackPanel HorizontalAlignment="Center" Spacing="8">
+                <ui:PhButton
+                    x:Name="PART_BtnBuyOnline"
+                    Width="300"
+                    HorizontalContentAlignment="Stretch"
+                    Variant="Accent">
+                    <ui:PhTextBlock
+                        x:Name="PART_LblBuyOnline"
+                        Foreground="{DynamicResource AccentButtonForeground}"
+                        TextAlignment="Center"
+                        TextTrimming="CharacterEllipsis" />
+                </ui:PhButton>
+                <ui:PhButton
+                    x:Name="PART_BtnImportLicense"
+                    Width="300"
+                    HorizontalContentAlignment="Stretch">
+                    <ui:PhTextBlock
+                        x:Name="PART_LblImportLicense"
+                        TextAlignment="Center"
+                        TextTrimming="CharacterEllipsis" />
+                </ui:PhButton>
+                <ui:PhButton
+                    x:Name="PART_BtnRetrieveEmail"
+                    Width="300"
+                    HorizontalContentAlignment="Stretch">
+                    <ui:PhTextBlock
+                        x:Name="PART_LblRetrieveEmail"
+                        TextAlignment="Center"
+                        TextTrimming="CharacterEllipsis" />
+                </ui:PhButton>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</ui:PhControl>

@@ -34,8 +34,10 @@ namespace ImageGlass.UI.Windowing;
 
 public partial class DialogWindow : PhWindow
 {
-    internal readonly int MIN_WIDTH = 400;
-    internal readonly int MAX_WIDTH = 600;
+    protected virtual int MIN_WIDTH => 400;
+    protected virtual int MAX_WIDTH => 600;
+    protected virtual Thickness ContentPadding => new(24, 14, 24, 20);
+
 
     protected Grid _contentEl;
     protected Border _footerEl;
@@ -117,6 +119,42 @@ public partial class DialogWindow : PhWindow
 
 
     /// <summary>
+    /// Gets, sets the icon of button 1; <c>null</c> shows text only.
+    /// </summary>
+    public Geometry? Button1Icon
+    {
+        get => GetValue(Button1IconProperty);
+        set => SetValue(Button1IconProperty, value);
+    }
+    public static readonly StyledProperty<Geometry?> Button1IconProperty =
+        AvaloniaProperty.Register<DialogWindow, Geometry?>(nameof(Button1Icon));
+
+
+    /// <summary>
+    /// Gets, sets the icon of button 2; <c>null</c> shows text only.
+    /// </summary>
+    public Geometry? Button2Icon
+    {
+        get => GetValue(Button2IconProperty);
+        set => SetValue(Button2IconProperty, value);
+    }
+    public static readonly StyledProperty<Geometry?> Button2IconProperty =
+        AvaloniaProperty.Register<DialogWindow, Geometry?>(nameof(Button2Icon));
+
+
+    /// <summary>
+    /// Gets, sets the icon of button 3; <c>null</c> shows text only.
+    /// </summary>
+    public Geometry? Button3Icon
+    {
+        get => GetValue(Button3IconProperty);
+        set => SetValue(Button3IconProperty, value);
+    }
+    public static readonly StyledProperty<Geometry?> Button3IconProperty =
+        AvaloniaProperty.Register<DialogWindow, Geometry?>(nameof(Button3Icon));
+
+
+    /// <summary>
     /// Gets, sets the visibility of button 1.
     /// </summary>
     public bool IsButton1Visible
@@ -165,6 +203,12 @@ public partial class DialogWindow : PhWindow
 
 
     /// <summary>
+    /// Gets, sets the value indicates that pression ENTER key to submit the window.
+    /// </summary>
+    public bool PressEnterToSubmit { get; set; } = true;
+
+
+    /// <summary>
     /// Gets or sets the result for the dialog.
     /// </summary>
     public DialogExitCode DialogResult { get; set; } = DialogExitCode.None;
@@ -180,7 +224,7 @@ public partial class DialogWindow : PhWindow
         CanMinimize = false;
 
         SizeToContent = SizeToContent.WidthAndHeight;
-        BackdropStyle = BackdropStyle.MicaAlt;
+        BackdropStyle = BHelper.OS == OSType.Windows ? BackdropStyle.MicaAlt : BackdropStyle.None;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         CloseWindowHotkeys = [new(Avalonia.Input.Key.Escape)];
 
@@ -230,7 +274,9 @@ public partial class DialogWindow : PhWindow
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
+        if (!PressEnterToSubmit) return;
 
+        // press Enter to submit
         var hk = new Hotkey(e.KeyModifiers, e.Key);
         if (hk.IsSame(Key.Enter))
         {
@@ -289,9 +335,13 @@ public partial class DialogWindow : PhWindow
     protected Grid CreateContentElement()
     {
         // 1. create content slot
+        // stretch the content so resizable dialogs (e.g. Settings) can fill/shrink and
+        // let their own scrollers take over instead of overflowing and centering.
         var dialogContentSlot = new ContentControl
         {
-            Padding = new Thickness(24, 14, 24, 20),
+            Padding = ContentPadding,
+            HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+            VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Stretch,
             [!ContentControl.ContentProperty] = this[!DialogContentProperty],
         };
         _contentEl = new Grid();
@@ -314,6 +364,7 @@ public partial class DialogWindow : PhWindow
             HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
             VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
             [!PhButton.TextProperty] = this[!Button1TextProperty],
+            [!PhButton.IconDataProperty] = this[!Button1IconProperty],
             [!PhButton.IsVisibleProperty] = this[!IsButton1VisibleProperty],
         };
         _btn2 = new PhButton
@@ -322,6 +373,7 @@ public partial class DialogWindow : PhWindow
             HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
             VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
             [!PhButton.TextProperty] = this[!Button2TextProperty],
+            [!PhButton.IconDataProperty] = this[!Button2IconProperty],
             [!PhButton.IsVisibleProperty] = this[!IsButton2VisibleProperty],
         };
         _btn3 = new PhButton
@@ -330,6 +382,7 @@ public partial class DialogWindow : PhWindow
             HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
             VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
             [!PhButton.TextProperty] = this[!Button3TextProperty],
+            [!PhButton.IconDataProperty] = this[!Button3IconProperty],
             [!PhButton.IsVisibleProperty] = this[!IsButton3VisibleProperty],
         };
         _btn1.Click += Button1_Click;
@@ -347,7 +400,7 @@ public partial class DialogWindow : PhWindow
         var footerWrapper = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("*, Auto"),
-            Margin = new Thickness(24, 19, 24, 20),
+            Margin = new Thickness(24, 17, 24, 18),
             ColumnSpacing = 20,
         };
         Grid.SetColumn(footerLeftSlot, 0);
@@ -510,9 +563,21 @@ public partial class DialogWindow : PhWindow
         var bg = AppThemeColors.BgBrush.Color.NoAlpha();
 
         // content bg
-        var contentAlpha = isDarkMode ? 180 : 220;
+        var contentAlpha = Math.Max(isDarkMode ? 180 : 220, bg.A);
         var contentBg = bg.WithAlpha(contentAlpha);
-        _contentEl.Background = new SolidColorBrush(contentBg);
+        _contentEl.Background = contentBg.ToBrush();
+
+        // footer bg
+        var footerAlpha = _canUseBackdrop ? Math.Max(180, contentAlpha / 2) : contentAlpha;
+        var footerBg = bg
+            .WithBrightness(isDarkMode ? 0.075f : -0.075f)
+            .WithAlpha(footerAlpha);
+        _footerEl.Background = footerBg.ToBrush();
+
+        // footer border
+        _footerEl.BorderBrush = footerBg
+            .WithBrightness(isDarkMode ? 0.075f : -0.075f)
+            .ToBrush();
     }
 
 
@@ -521,20 +586,23 @@ public partial class DialogWindow : PhWindow
     /// </summary>
     protected void SetDefaultButton(DialogButton btn)
     {
+        // Only make the button the Enter-key default when submission via Enter is allowed.
+        // Avalonia routes Enter to any IsDefault button regardless of OnKeyDown, so this
+        // is what actually honors PressEnterToSubmit = false.
         if (btn == DialogButton.Button1)
         {
-            _btn1.IsDefault = true;
-            _btn1.IsAccent = true;
+            _btn1.IsDefault = PressEnterToSubmit;
+            _btn1.Variant = PhButtonVariant.Accent;
         }
         else if (btn == DialogButton.Button2)
         {
-            _btn2.IsDefault = true;
-            _btn2.IsAccent = true;
+            _btn2.IsDefault = PressEnterToSubmit;
+            _btn2.Variant = PhButtonVariant.Accent;
         }
         else if (btn == DialogButton.Button3)
         {
-            _btn3.IsDefault = true;
-            _btn3.IsAccent = true;
+            _btn3.IsDefault = PressEnterToSubmit;
+            _btn3.Variant = PhButtonVariant.Accent;
         }
     }
 

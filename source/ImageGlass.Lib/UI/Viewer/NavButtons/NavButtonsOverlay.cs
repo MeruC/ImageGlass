@@ -41,6 +41,11 @@ public class NavButtonsOverlay : PhControl
 
     private NavButtonsInfo _state = new();
     private ViewerControl? _parentViewer;
+    private Window? _parentWindow;
+
+    // an inactive window is only activated by the next click, which must not also navigate
+    private bool _swallowActivatingPress = false;
+    private Point? _lastPointerPoint = null;
 
     // animation state per button (0 = hidden, 1 = fully visible)
     private double _leftAnimProgress = 0;
@@ -72,6 +77,13 @@ public class NavButtonsOverlay : PhControl
             _state = _parentViewer._navButtons;
         }
 
+        _parentWindow = TopLevel.GetTopLevel(this) as Window;
+        if (_parentWindow is not null)
+        {
+            _parentWindow.Activated += ParentWindow_Activated;
+            _parentWindow.Deactivated += ParentWindow_Deactivated;
+        }
+
         // suppress context menu on nav button areas
         AddHandler(ContextRequestedEvent, OnContextRequested, RoutingStrategies.Tunnel);
 
@@ -85,7 +97,39 @@ public class NavButtonsOverlay : PhControl
 
         RemoveHandler(ContextRequestedEvent, OnContextRequested);
 
+        if (_parentWindow is not null)
+        {
+            _parentWindow.Activated -= ParentWindow_Activated;
+            _parentWindow.Deactivated -= ParentWindow_Deactivated;
+            _parentWindow = null;
+        }
+
         _animRunning = false;
+    }
+
+
+    /// <summary>
+    /// Restores the hover state under the pointer once the window is active again.
+    /// </summary>
+    private void ParentWindow_Activated(object? sender, EventArgs e)
+    {
+        if (!IsPointerOver || _lastPointerPoint is not Point pos) return;
+
+        _state.IsLeftHovered = GetLeftHitArea().Contains(pos);
+        _state.IsRightHovered = GetRightHitArea().Contains(pos);
+        UpdateAnimationTargets();
+    }
+
+
+    /// <summary>
+    /// Hides the buttons and arms the activating-click guard when the window loses focus.
+    /// </summary>
+    private void ParentWindow_Deactivated(object? sender, EventArgs e)
+    {
+        _swallowActivatingPress = true;
+        _state.ResetState();
+        UpdateAnimationTargets();
+        InvalidateVisual();
     }
 
 
@@ -124,6 +168,13 @@ public class NavButtonsOverlay : PhControl
         var p = e.GetCurrentPoint(this);
         if (!p.Properties.IsLeftButtonPressed) return;
 
+        // the click that re-activates the window must not reach a nav button
+        if (!IsWindowActive() || _swallowActivatingPress)
+        {
+            _swallowActivatingPress = false;
+            return;
+        }
+
         var pos = p.Position;
         _state.PointerDownPoint = pos;
         _state.IsDragging = false;
@@ -157,6 +208,19 @@ public class NavButtonsOverlay : PhControl
 
         var pos = e.GetPosition(this);
         var p = e.GetCurrentPoint(this);
+
+        // an inactive window must not light up the buttons on hover
+        if (!IsWindowActive())
+        {
+            _lastPointerPoint = pos;
+            _state.ResetState();
+            UpdateAnimationTargets();
+            return;
+        }
+
+        // a real cursor move means this is no longer the click that activated the window
+        if (_lastPointerPoint != pos) _swallowActivatingPress = false;
+        _lastPointerPoint = pos;
 
         // drag threshold check
         if ((_state.IsLeftPressed || _state.IsRightPressed) && !_state.IsDragging)
@@ -198,6 +262,7 @@ public class NavButtonsOverlay : PhControl
 
         if (_parentViewer is null || !_state.IsEnabled || _parentViewer.EnableSelection)
             return;
+        if (!IsWindowActive()) return;
 
         var pos = e.GetPosition(this);
 
@@ -226,6 +291,7 @@ public class NavButtonsOverlay : PhControl
     {
         base.OnPointerExited(e);
         _state.ResetState();
+        _lastPointerPoint = null;
         UpdateAnimationTargets();
     }
 
@@ -234,6 +300,12 @@ public class NavButtonsOverlay : PhControl
 
 
     #region Private Methods
+
+    /// <summary>
+    /// Checks if the parent window is active; the buttons ignore input while it is not.
+    /// </summary>
+    private bool IsWindowActive() => _parentWindow?.IsActive ?? true;
+
 
     /// <summary>
     /// Suppresses context menu when the pointer is in a nav button hit area.

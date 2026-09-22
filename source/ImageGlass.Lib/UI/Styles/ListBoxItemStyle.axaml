@@ -1,0 +1,136 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        ListBoxItem — WinUI 3 / Fluent 2 ListViewItem look:
+        • transparent at rest; subtle neutral SubtleFill on hover / press / selected (no accent-on-accent)
+        • rounded accent selection-indicator pill on the left that grows from center when selected
+        • foreground stays neutral (inherited theme foreground)
+    -->
+
+    <Styles.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+
+                <!--  Fluent 2 SubtleFill tokens (low-alpha neutral, matches WinUI 3 list rows)  -->
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="PhListItemFillSecondary" Color="#09000000" />
+                    <SolidColorBrush x:Key="PhListItemFillTertiary" Color="#06000000" />
+                </ResourceDictionary>
+
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="PhListItemFillSecondary" Color="#0FFFFFFF" />
+                    <SolidColorBrush x:Key="PhListItemFillTertiary" Color="#0AFFFFFF" />
+                </ResourceDictionary>
+
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Styles.Resources>
+
+
+    <Style Selector="ListBoxItem">
+        <Setter Property="Margin" Value="4, 0" />
+        <Setter Property="Padding" Value="{DynamicResource MenuFlyoutItemThemePaddingNarrow}" />
+        <Setter Property="MinHeight" Value="0" />
+
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="{DynamicResource ControlCornerRadius}" />
+
+        <!--  custom template: content host + accent selection-indicator pill  -->
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Panel>
+                    <ContentPresenter
+                        Name="PART_ContentPresenter"
+                        Padding="{TemplateBinding Padding}"
+                        HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                        VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        Content="{TemplateBinding Content}"
+                        ContentTemplate="{TemplateBinding ContentTemplate}"
+                        CornerRadius="{TemplateBinding CornerRadius}" />
+
+                    <!--  pill: hidden (collapsed + scaled down) at rest, grows from center when selected  -->
+                    <Rectangle
+                        Name="SelectionIndicator"
+                        Width="3.5"
+                        Height="16"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Center"
+                        Fill="{DynamicResource PhAccentFill}"
+                        IsHitTestVisible="False"
+                        Opacity="0"
+                        RadiusX="2"
+                        RadiusY="2"
+                        RenderTransform="scaleY(0.3)"
+                        RenderTransformOrigin="50%,50%">
+                        <Rectangle.Transitions>
+                            <Transitions>
+                                <DoubleTransition Property="Opacity" Duration="0:0:0.1" />
+                                <BrushTransition Property="Fill" Duration="0:0:0.04" />
+                                <TransformOperationsTransition
+                                    Property="RenderTransform"
+                                    Easing="CubicEaseOut"
+                                    Duration="0:0:0.15" />
+                            </Transitions>
+                        </Rectangle.Transitions>
+                    </Rectangle>
+                </Panel>
+            </ControlTemplate>
+        </Setter>
+
+        <!--  fill hover/press transition  -->
+        <Style Selector="^ /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.05" />
+                </Transitions>
+            </Setter>
+        </Style>
+
+        <!--  pointer-over  -->
+        <Style Selector="^:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource PhListItemFillSecondary}" />
+        </Style>
+
+        <!--  pressed  -->
+        <Style Selector="^:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource PhListItemFillTertiary}" />
+        </Style>
+
+        <!--  selected: subtle fill + reveal the accent pill  -->
+        <Style Selector="^:selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource PhListItemFillSecondary}" />
+        </Style>
+        <Style Selector="^:selected /template/ Rectangle#SelectionIndicator">
+            <Setter Property="Opacity" Value="1" />
+            <Setter Property="RenderTransform" Value="scaleY(1)" />
+        </Style>
+
+        <!--  selected + hover: dips to tertiary (WinUI 3 behavior); pill tracks the accent button hover brush  -->
+        <Style Selector="^:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource PhListItemFillTertiary}" />
+        </Style>
+        <Style Selector="^:selected:pointerover /template/ Rectangle#SelectionIndicator">
+            <Setter Property="Fill" Value="{DynamicResource PhAccentFillPointerOver}" />
+        </Style>
+
+        <!--  selected + pressed: back to secondary; pill tracks the accent button pressed brush and shrinks  -->
+        <Style Selector="^:selected:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource PhListItemFillSecondary}" />
+        </Style>
+        <Style Selector="^:selected:pressed /template/ Rectangle#SelectionIndicator">
+            <Setter Property="Fill" Value="{DynamicResource PhAccentFillPressed}" />
+            <Setter Property="RenderTransform" Value="scaleY(0.7)" />
+        </Style>
+
+        <!--  disabled  -->
+        <Style Selector="^:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Opacity" Value="0.5" />
+        </Style>
+    </Style>
+
+</Styles>

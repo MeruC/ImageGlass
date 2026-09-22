@@ -19,7 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Media.Imaging;
+using Avalonia.Media;
 using ImageGlass.Common;
 using ImageGlass.Common.Localization;
 using ImageGlass.Common.Types;
@@ -121,13 +121,13 @@ public partial class ModalWindow : DialogWindow
     /// <summary>
     /// Gets, sets the thumbnail of modal.
     /// </summary>
-    public Bitmap? Thumbnail
+    public IImage? Thumbnail
     {
         get => GetValue(ThumbnailProperty);
         set => SetValue(ThumbnailProperty, value);
     }
-    public static readonly StyledProperty<Bitmap?> ThumbnailProperty =
-        AvaloniaProperty.Register<ModalWindow, Bitmap?>(nameof(Thumbnail));
+    public static readonly StyledProperty<IImage?> ThumbnailProperty =
+        AvaloniaProperty.Register<ModalWindow, IImage?>(nameof(Thumbnail));
 
 
     /// <summary>
@@ -164,6 +164,18 @@ public partial class ModalWindow : DialogWindow
     }
     public static readonly StyledProperty<TextBoxAcceptValue> AcceptValueProperty =
         AvaloniaProperty.Register<ModalWindow, TextBoxAcceptValue>(nameof(AcceptValue), TextBoxAcceptValue.Any);
+
+
+    /// <summary>
+    /// Gets, sets the placeholder text of the input control.
+    /// </summary>
+    public string? InputPlaceholder
+    {
+        get => GetValue(InputPlaceholderProperty);
+        set => SetValue(InputPlaceholderProperty, value);
+    }
+    public static readonly StyledProperty<string?> InputPlaceholderProperty =
+        AvaloniaProperty.Register<ModalWindow, string?>(nameof(InputPlaceholder));
 
 
     /// <summary>
@@ -412,7 +424,8 @@ public partial class ModalWindow : DialogWindow
             Width = THUMBNAIL_SIZE,
             Height = THUMBNAIL_SIZE,
             Stretch = Avalonia.Media.Stretch.Uniform,
-            StretchDirection = Avalonia.Media.StretchDirection.DownOnly,
+            // Both, not DownOnly: the slot is a fixed 80px box, and a vector source has no natural size
+            StretchDirection = Avalonia.Media.StretchDirection.Both,
             [!Viewbox.IsVisibleProperty] = this[!IsThumbnailVisibleProperty],
             Child = new Image
             {
@@ -446,7 +459,7 @@ public partial class ModalWindow : DialogWindow
             FontWeight = Avalonia.Media.FontWeight.Medium,
             [!TextBlock.TextProperty] = this[!HeadingProperty],
             [!TextBlock.IsVisibleProperty] = this[!IsHeadingVisibleProperty],
-            [!TextBlock.ForegroundProperty] = Resx.CreateBinding(ResxId.SystemAccentColor),
+            [!TextBlock.ForegroundProperty] = Resx.CreateBinding(ResxId.IG_TextAccentColor),
         };
         var lblDescription = new TextBlock
         {
@@ -462,6 +475,7 @@ public partial class ModalWindow : DialogWindow
             [!PhTextBox.AcceptValueProperty] = this[!AcceptValueProperty],
             [!TextBox.TextProperty] = this[!InputValueProperty],
             [!TextBox.IsVisibleProperty] = this[!IsInputVisibleProperty],
+            [!TextBox.PlaceholderTextProperty] = this[!InputPlaceholderProperty],
         };
         var lblDetails = new Border
         {
@@ -585,12 +599,12 @@ public partial class ModalWindow : DialogWindow
     /// <summary>
     /// Loads thumbnail icon.
     /// </summary>
-    private void LoadThumbnailIconSource()
+    protected void LoadThumbnailIconSource()
     {
         if (_thumbnailIconImage.Source is not null) return;
 
         // get system icon
-        var bmp = StockIcon.Get(ThumbnailIcon);
+        var bmp = Resx.GetStockIcon(ThumbnailIcon);
 
         // set the icon
         _thumbnailIconImage.Width = Thumbnail is null ? 50 : 40;
@@ -661,6 +675,7 @@ public partial class ModalWindow : DialogWindow
             ThumbnailIcon = options.ThumbnailIcon,
             InputValue = options.InputValue,
             AcceptValue = options.AcceptValue,
+            InputPlaceholder = options.InputPlaceholder,
             IsInputVisible = options.IsInputVisible ?? false,
             IsRememberOptionVisible = options.IsRememberOptionVisible,
             ShowInTaskbar = options.ShowInTaskbar ?? true,
@@ -804,6 +819,22 @@ public partial class ModalWindow : DialogWindow
 
 
     /// <summary>
+    /// Reports why <see cref="Config.SaveAsync"/> could not write the settings file; no-op if it did.
+    /// </summary>
+    public static async Task ShowSettingsSaveErrorAsync(PhWindow? owner, string title)
+    {
+        if (Config.SavingException is not Exception ex) return;
+
+        _ = await ShowErrorAsync(owner, new ModalWindowOptions
+        {
+            Title = title,
+            Heading = ex.Message,
+            Description = BHelper.GetRealPlatformConfigDir(Config.CONFIG_USER),
+        });
+    }
+
+
+    /// <summary>
     /// Reports unhandled exception,
     /// returns <c>true</c> if user ignores the error to continue.
     /// </summary>
@@ -821,7 +852,7 @@ public partial class ModalWindow : DialogWindow
         // show error modal dialog
         var result = await ShowErrorAsync(owner, new ModalWindowOptions
         {
-            Title = $"{Core.Lang[LangId._UnhandledException]} – {BHelper.AppName}",
+            Title = $"{Core.Lang[LangId._UnhandledException]} – {BHelper.AppDisplayName}",
             Heading = heading ?? ex.Message,
             Description = descriptionText,
             Details = details,

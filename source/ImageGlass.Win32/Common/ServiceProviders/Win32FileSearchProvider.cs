@@ -18,6 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 using Avalonia.Threading;
 using D2Phap;
+using ImageGlass.Common;
 using ImageGlass.Common.ServiceProviders.FileSearchService;
 using System;
 using System.Collections.Concurrent;
@@ -34,9 +35,7 @@ public partial class Win32FileSearchProvider : FileSearchProvider
 {
 
     /// <summary>
-    /// Searches files from the provided directories.
-    /// If <see cref="FileSearchOptions.UseExplorerSortOrder"/> is <c>true</c>,
-    /// it follows there steps:
+    /// Searches files from the provided directories, following these steps:
     /// 
     /// <list type="number">
     /// <item>
@@ -44,35 +43,48 @@ public partial class Win32FileSearchProvider : FileSearchProvider
     ///   ignoring the param <c><paramref name="dirs"/></c>.
     /// </item>
     /// <item>
-    ///   If not (or error), try to get the shell view
-    ///   from each param <c><paramref name="dirs"/></c> provided, then do step 1.
+    ///   If not (or error), and <see cref="FileSearchOptions.UseExplorerSortOrder"/> is <c>true</c>,
+    ///   try to get the shell view from each param <c><paramref name="dirs"/></c> provided, then do step 1.
     /// </item>
     /// <item>
     ///   If not shell view from step 2, use the normal searching process:
     /// </item>
     /// </list>
     /// 
+    /// The shell view only decides <i>which</i> files are listed; their order still comes from
+    /// <see cref="FileSearchOptions.OrderBy"/> unless <see cref="FileSearchOptions.UseExplorerSortOrder"/> is <c>true</c>.
+    /// 
     /// <inheritdoc/>
     /// </summary>
     public override async Task SearchAsync(IEnumerable<string> dirs, FileSearchOptions options, Action<FileSearchingEventArgs>? progressFn = null)
     {
-        _progressFn = progressFn;
         Options = options;
 
         // cancel ongoing search
         CancelSearching();
-        IsSearchEnded = false;
+        var token = _cancelSearching.Token;
+
+        // Publishing on the UI thread serializes old-search cancellation with list updates.
+        Action<FileSearchingEventArgs>? publish = progressFn is null
+            ? null
+            : e => Dispatcher.UIThread.Post(() =>
+            {
+                if (!token.IsCancellationRequested) progressFn(e);
+            });
 
 
-        // 1. get files from the foreground window
-        if (Options.ForegroundShell != null && Options.UseExplorerSortOrder)
+        // 1. get files from the foreground window; a search result has no other source,
+        // so the shell is used whenever the caller supplies one
+        if (options.ForegroundShell != null)
         {
             Dispatcher.UIThread.Post(() =>
             {
+                if (token.IsCancellationRequested) return;
+
                 try
                 {
-                    var folderShell = GetShellFolderView(null, (ExplorerView?)Options.ForegroundShell);
-                    FindFiles_WithShell(folderShell.View, folderShell.DirPath, _cancelSearching.Token);
+                    var folderShell = GetShellFolderView(null, (ExplorerView?)options.ForegroundShell);
+                    FindFiles_WithShell(folderShell.View, folderShell.DirPath, options, publish, token);
                 }
                 catch (COMException) { }
             });
@@ -85,11 +97,13 @@ public partial class Win32FileSearchProvider : FileSearchProvider
         var fvMap = new ConcurrentDictionary<string, ExplorerFolderView?>();
         var dirList = dirs.ToList();
 
-        if (Options.UseExplorerSortOrder)
+        if (options.UseExplorerSortOrder)
         {
             // find and save all shell folder view
             foreach (var dirPath in dirList)
             {
+                if (token.IsCancellationRequested) return;
+
                 var folderShell = await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     var dirShell = GetShellFolderView(dirPath, null);
@@ -107,6 +121,7 @@ public partial class Win32FileSearchProvider : FileSearchProvider
         {
             foreach (var dirPath in dirList)
             {
+                if (token.IsCancellationRequested) break;
                 var folderShellView = fvMap.GetValueOrDefault(dirPath);
 
                 // with shell
@@ -114,21 +129,21 @@ public partial class Win32FileSearchProvider : FileSearchProvider
                 {
                     Dispatcher.UIThread.Post(() =>
                     {
-                        FindFiles_WithShell(folderShellView, dirPath, _cancelSearching.Token);
+                        if (!token.IsCancellationRequested)
+                        {
+                            FindFiles_WithShell(folderShellView, dirPath, options, publish, token);
+                        }
                     });
                 }
 
                 // without shell
                 else
                 {
-                    FindFiles(dirPath, _cancelSearching.Token);
+                    FindFiles(dirPath, options, publish, token);
                 }
             }
         });
 
-
-        // 4. end searching
-        IsSearchEnded = true;
 
         // dipose shell objects
         fvMap.Clear();
@@ -139,7 +154,9 @@ public partial class Win32FileSearchProvider : FileSearchProvider
     /// Finds files in the given <see cref="ExplorerFolderView"/>.
     /// Use the <see cref="FilesEnumerated"/> event to get results.
     /// </summary>
-    private void FindFiles_WithShell(ExplorerFolderView? fv, string? rootDir, CancellationToken token)
+    private void FindFiles_WithShell(ExplorerFolderView? fv, string? rootDir,
+        FileSearchOptions options, Action<FileSearchingEventArgs>? progressFn,
+        CancellationToken token)
     {
         // if no folder view
         if (fv is null)
@@ -147,83 +164,91 @@ public partial class Win32FileSearchProvider : FileSearchProvider
             // use .NET
             if (!string.IsNullOrWhiteSpace(rootDir))
             {
-                FindFiles(rootDir, token);
+                FindFiles(rootDir, options, progressFn, token);
             }
             return;
         }
 
 
-        // 1. get & filter files from shell folder view
-        var filePaths = fv.GetItems(FolderItemViewOptions.SVGIO_FLAG_VIEWORDER)
-            .Where(path =>
+        // shell determines which items are shown and in what order.
+        var shellPaths = fv.GetItems(FolderItemViewOptions.SVGIO_FLAG_VIEWORDER).ToArray();
+
+        // directory enumeration provides their filesystem metadata.
+        var isFileSystemDirectory = !string.IsNullOrWhiteSpace(rootDir)
+            && Path.IsPathFullyQualified(rootDir)
+            && Directory.Exists(rootDir);
+        var entriesByPath = isFileSystemDirectory
+            ? EnumerateFileEntries(rootDir!, options, false, token).ToDictionary(entry => entry.FilePath, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, FileSearchEntry>(StringComparer.OrdinalIgnoreCase);
+
+        if (token.IsCancellationRequested) return;
+
+        var entries = shellPaths
+            .Select(path =>
             {
                 // ignore special folders
-                if (path.StartsWith(EggShell.SPECIAL_DIR_PREFIX, StringComparison.InvariantCultureIgnoreCase)) return false;
+                if (path.StartsWith(EggShell.SPECIAL_DIR_PREFIX, StringComparison.InvariantCultureIgnoreCase)) return null;
+
+                // filter unsupported Shell items
+                if (options.AllowedExtensions is not null)
+                {
+                    var ext = Path.GetExtension(path).ToLowerInvariant();
+                    if (!options.AllowedExtensions.Contains(ext)) return null;
+                }
 
                 try
                 {
-                    // get path attributes
-                    var attrs = File.GetAttributes(path);
+                    var entry = entriesByPath.GetValueOrDefault(path) ?? FileSearchEntry.FromPath(path);
+                    var attrs = entry.Attributes;
 
                     // path is dir
-                    if (attrs.HasFlag(FileAttributes.Directory)) return false;
+                    if (attrs.HasFlag(FileAttributes.Directory)) return null;
 
-                    // path is hidden
-                    if (!Options.IncludeHidden && attrs.HasFlag(FileAttributes.Hidden)) return false;
+                    // path is hidden/system
+                    if ((attrs & BHelper.GetSkippedFileAttributes(options.IncludeHidden)) != 0) return null;
+
+                    return entry;
                 }
                 catch
                 {
-                    return false;
+                    return null;
                 }
+            })
+            .Where(entry => entry is not null)
+            .Cast<FileSearchEntry>()
+            .ToList();
 
-                // filter extensions
-                if (Options.AllowedExtensions is not null)
-                {
-                    var ext = Path.GetExtension(path).ToLowerInvariant();
+        // cancel if requested
+        if (token.IsCancellationRequested) return;
 
-                    return Options.AllowedExtensions.Contains(ext);
-                }
+        // the shell only decided which files are listed; the user's own order still applies
+        var results = options.UseExplorerSortOrder
+            ? entries
+            : OnSorting(entries, options).ToList();
 
-                return true;
-            });
+        // emit results
+        progressFn?.Invoke(new FileSearchingEventArgs(results));
 
 
         // cancel if requested
         if (token.IsCancellationRequested) return;
 
 
-        // 3. emits results
-        _progressFn?.Invoke(new FileSearchingEventArgs(filePaths, IsSearchEnded));
-
-
-        // cancel if requested
-        if (token.IsCancellationRequested) return;
-
-
-        // 4. search all sub-directories if root dir is a real filesystem directory.
+        // search all sub-directories if root dir is a real filesystem directory.
         // Skip for shell URIs like `search-ms:` or `shell:` which are not valid paths
         // for Directory.EnumerateDirectories and would throw IOException.
         // https://github.com/d2phap/ImageGlass/issues/2189
-        if (Options.SearchSubDirectories
-            && !string.IsNullOrWhiteSpace(rootDir)
-            && Path.IsPathFullyQualified(rootDir)
-            && Directory.Exists(rootDir))
+        if (options.SearchSubDirectories && isFileSystemDirectory)
         {
             // search files for the sub dirs
             // get sub folders
-            var subDirList = Directory.EnumerateDirectories(rootDir, "*", new EnumerationOptions()
-            {
-                IgnoreInaccessible = true,
-                AttributesToSkip = Options.IncludeHidden
-                    ? FileAttributes.System
-                    : FileAttributes.System | FileAttributes.Hidden,
-                RecurseSubdirectories = false,
-            });
+            var subDirList = Directory.EnumerateDirectories(rootDir!, "*",
+                BHelper.GetEnumerationOptions(options.IncludeHidden));
 
             // find files in sub-folders
             foreach (var dirPath in subDirList)
             {
-                FindFiles(dirPath, token);
+                FindFiles(dirPath, options, progressFn, token);
             }
         }
     }

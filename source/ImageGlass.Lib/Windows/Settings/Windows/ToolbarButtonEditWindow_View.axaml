@@ -1,0 +1,126 @@
+<ui:PhControl
+    x:Class="ImageGlass.Common.Windows.ToolbarButtonEditWindowView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="using:ImageGlass.UI"
+    mc:Ignorable="d"
+    d:DesignWidth="500">
+
+    <ScrollViewer
+        MaxHeight="500"
+        HorizontalScrollBarVisibility="Disabled"
+        VerticalScrollBarVisibility="Auto">
+
+        <StackPanel
+            Margin="24"
+            Orientation="Vertical"
+            Spacing="14">
+
+            <!--  Read-only note (built-in buttons)  -->
+            <ui:PhTextBlock
+                x:Name="PART_ReadonlyNote"
+                IsVisible="False"
+                LangKey="Settings_Toolbar_BuiltInReadonly"
+                Opacity="0.8"
+                TextWrapping="Wrap" />
+
+            <StackPanel
+                x:Name="PART_Fields"
+                Orientation="Vertical"
+                Spacing="14">
+
+                <!--  ID + button text (side by side, 200 wide each)  -->
+                <StackPanel Orientation="Horizontal" Spacing="14">
+                    <StackPanel Spacing="5">
+                        <ui:PhTextBlock LangKey="_ID" />
+                        <ui:PhTextBox
+                            x:Name="PART_Id"
+                            Width="200"
+                            IsRequired="True"
+                            PlaceholderText="Btn_MyAction" />
+                    </StackPanel>
+                    <StackPanel Spacing="5">
+                        <ui:PhTextBlock LangKey="Settings_Toolbar_ButtonText" />
+                        <ui:PhTextBox x:Name="PART_Text" Width="200" />
+                    </StackPanel>
+                </StackPanel>
+
+
+                <!--  Icon  -->
+                <StackPanel Spacing="5">
+                    <ui:PhTextBlock LangKey="_Icon" />
+                    <StackPanel Spacing="8">
+                        <ComboBox
+                            x:Name="PART_Image"
+                            Width="200"
+                            HorizontalAlignment="Left" />
+                        <Grid
+                            x:Name="PART_CustomImageRow"
+                            ColumnDefinitions="*,Auto"
+                            ColumnSpacing="8"
+                            IsVisible="False">
+                            <ui:PhTextBox
+                                x:Name="PART_CustomImagePath"
+                                Grid.Column="0"
+                                AcceptValue="FilePathValueOnly"
+                                PlaceholderText="\path\to\icon.svg" />
+                            <ui:PhButton
+                                x:Name="PART_BrowseImage"
+                                Grid.Column="1"
+                                Height="32"
+                                VerticalAlignment="Top"
+                                IconData="{StaticResource IconFolderOpen}" />
+                        </Grid>
+                    </StackPanel>
+                </StackPanel>
+
+
+                <!--  Toggles (kept tight, not on the 14px field rhythm)  -->
+                <StackPanel>
+                    <CheckBox x:Name="PART_ShowText">
+                        <ui:PhTextBlock LangKey="Settings_Toolbar_ShowButtonText" TextWrapping="Wrap" />
+                    </CheckBox>
+                    <CheckBox x:Name="PART_AlignRight">
+                        <ui:PhTextBlock LangKey="Settings_Toolbar_AlignRight" TextWrapping="Wrap" />
+                    </CheckBox>
+
+                    <!--  Toggle binding: the checkbox reveals the config name + value inputs  -->
+                    <StackPanel Spacing="5">
+                        <CheckBox x:Name="PART_EnableConfigBinding">
+                            <ui:PhTextBlock LangKey="Settings_Toolbar_ConfigBinding" TextWrapping="Wrap" />
+                        </CheckBox>
+                        <StackPanel
+                            x:Name="PART_ConfigBindingInputs"
+                            Margin="30,0,0,0"
+                            IsVisible="False"
+                            Orientation="Horizontal"
+                            Spacing="14">
+                            <StackPanel Spacing="5">
+                                <ui:PhTextBlock LangKey="Settings_Toolbar_ConfigBindingName" />
+                                <ui:PhTextBox x:Name="PART_ConfigBinding" Width="200" />
+                            </StackPanel>
+                            <StackPanel Spacing="5">
+                                <ui:PhTextBlock LangKey="Settings_Toolbar_ConfigBindingValue" />
+                                <ui:PhTextBox x:Name="PART_ConfigBindingValue" Width="200" />
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+
+
+                <!--  Click action  -->
+                <ui:PhActionEditorControl
+                    x:Name="PART_Action"
+                    Margin="0,2,0,0"
+                    Padding="0,10,0,0"
+                    BorderBrush="{DynamicResource IG_BorderNeutralBrush}"
+                    BorderThickness="0,1,0,0"
+                    IsExecutableRequired="False" />
+
+            </StackPanel>
+        </StackPanel>
+
+    </ScrollViewer>
+</ui:PhControl>

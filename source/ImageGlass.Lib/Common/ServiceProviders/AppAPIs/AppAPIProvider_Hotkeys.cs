@@ -1,4 +1,4 @@
-/*
+﻿/*
 ImageGlass - A Fast, Seamless Photo Viewer
 Copyright (C) 2010 - 2026 DUONG DIEU PHAP
 Project homepage: https://imageglass.org
@@ -22,6 +22,7 @@ using ImageGlass.Common.AppThemes;
 using ImageGlass.Common.Localization;
 using ImageGlass.Common.Photoing;
 using ImageGlass.Common.Types;
+using ImageGlass.Common.Windows;
 using ImageGlass.Tools;
 using ImageGlass.UI;
 using ImageGlass.UI.Viewer;
@@ -46,68 +47,74 @@ public partial class AppAPIProvider
     public bool IsQuickBrowsing => _isQuickBrowsingPhotos;
 
 
-    // list of all menu items & default action, hotkeys
-    private static IReadOnlyCollection<HotkeySingleAction> _defaultMenuList => [
-        new(LangId.FrmMain_MnuMain,                 API.IG_OpenMainMenu,        MKeys.Alt, Key.F),
+    /// <summary>
+    /// Gets all menu items with their default action and hotkeys. Rebuilt on each access, so it always
+    /// yields the pristine defaults even after <see cref="RegisterHotkeys"/> has overwritten the live
+    /// <see cref="_menuMap"/> hotkeys with the user's config. Used by the Keyboard settings page.
+    /// </summary>
+    public static IReadOnlyCollection<HotkeySingleAction> DefaultMenuList => [
+        new(LangId.Menu_MnuMain,                 API.IG_OpenMainMenu,        MKeys.Alt, Key.F),
 
         // File
-        new(LangId.FrmMain_MnuOpenFile,             API.IG_OpenFile,            Hotkey.Ctrl, Key.O),
-        new(LangId.FrmMain_MnuNewWindow,            API.IG_NewWindow,           Hotkey.Ctrl, Key.N),
-        new(LangId.FrmMain_MnuSave,                 API.IG_Save,                Hotkey.Ctrl, Key.S),
-        new(LangId.FrmMain_MnuSaveAs,               API.IG_SaveAs,              Hotkey.Ctrl | MKeys.Shift, Key.S),
-        new(LangId.FrmMain_MnuExportFrames,         API.IG_ExportImageFrames,   Hotkey.Ctrl, Key.J),
-        new(LangId.FrmMain_MnuPrint,                API.IG_Print,               Hotkey.Ctrl, Key.P),
-        new(LangId.FrmMain_MnuOpenWith,             API.IG_OpenWith,            Key.D),
-        new(LangId.FrmMain_MnuShare,                API.IG_Share,               Key.S),
-        new(LangId.FrmMain_MnuOpenLocation,         API.IG_OpenLocation,        Key.L),
-        new(LangId.FrmMain_MnuRename,               API.IG_Rename,              Key.F2),
-        new(LangId.FrmMain_MnuMoveToRecycleBin,     API.IG_Delete, "true",      [new(Hotkey.Delete)]),
-        new(LangId.FrmMain_MnuDeleteFromHardDisk,   API.IG_Delete, "false",     [new(MKeys.Shift, Hotkey.Delete)]),
-        new(LangId.FrmMain_MnuImageProperties,      API.IG_OpenProperties,      MKeys.Alt, Key.Enter),
+        new(LangId.Menu_MnuOpenFile,             API.IG_OpenFile,            Hotkey.Ctrl, Key.O),
+        new(LangId.Menu_MnuNewWindow,            API.IG_NewWindow,           Hotkey.Ctrl, Key.N),
+        new(LangId.Menu_MnuSave,                 API.IG_Save,                Hotkey.Ctrl, Key.S),
+        new(LangId.Menu_MnuSaveAs,               API.IG_SaveAs,              Hotkey.Ctrl | MKeys.Shift, Key.S),
+        new(LangId.Menu_MnuExportFrames,         API.IG_ExportImageFrames,   Hotkey.Ctrl, Key.J),
+        .. SupportedOn(BHelper.OS == OSType.Windows, [
+            new(LangId.Menu_MnuPrint,            API.IG_Print,               Hotkey.Ctrl, Key.P),
+            new(LangId.Menu_MnuOpenWith,         API.IG_OpenWith,            Key.D),
+            new(LangId.Menu_MnuShare,            API.IG_Share,               Key.S),
+        ]),
+        new(LangId.Menu_MnuOpenLocation,         API.IG_OpenLocation,        Key.L),
+        new(LangId.Menu_MnuRename,               API.IG_Rename,              Key.F2),
+        new(LangId.Menu_MnuMoveToRecycleBin,     API.IG_Delete, "true",      [new(Hotkey.Delete)]),
+        new(LangId.Menu_MnuDeleteFromHardDisk,   API.IG_Delete, "false",     [new(MKeys.Shift, Hotkey.Delete)]),
+        new(LangId.Menu_MnuImageProperties,      API.IG_OpenProperties,      MKeys.Alt, Key.Enter),
 
 
         // Navigation
-        new(LangId.FrmMain_MnuViewNext,             API.IG_ViewNext,            Key.Right),
-        new(LangId.FrmMain_MnuViewPrevious,         API.IG_ViewPrevious,        Key.Left),
-        new(LangId.FrmMain_MnuGoTo,                 API.IG_Goto,                Key.F),
-        new(LangId.FrmMain_MnuGoToFirst,            API.IG_GotoFirst,           Key.Home),
-        new(LangId.FrmMain_MnuGoToLast,             API.IG_GotoLast,            Key.End),
-        new(LangId.FrmMain_MnuViewNextFrame,        API.IG_ViewNextFrame,       Hotkey.Ctrl, Key.Right),
-        new(LangId.FrmMain_MnuViewPreviousFrame,    API.IG_ViewPreviousFrame,   Hotkey.Ctrl, Key.Left),
-        new(LangId.FrmMain_MnuViewFirstFrame,       API.IG_ViewFirstFrame,      Hotkey.Ctrl, Key.Up),
-        new(LangId.FrmMain_MnuViewLastFrame,        API.IG_ViewLastFrame,       Hotkey.Ctrl, Key.Down),
+        new(LangId.Menu_MnuViewNext,             API.IG_ViewNext,            Key.Right),
+        new(LangId.Menu_MnuViewPrevious,         API.IG_ViewPrevious,        Key.Left),
+        new(LangId.Menu_MnuGoTo,                 API.IG_Goto,                Key.F),
+        new(LangId.Menu_MnuGoToFirst,            API.IG_GotoFirst,           Key.Home),
+        new(LangId.Menu_MnuGoToLast,             API.IG_GotoLast,            Key.End),
+        new(LangId.Menu_MnuViewNextFrame,        API.IG_ViewNextFrame,       Hotkey.Ctrl, Key.Right),
+        new(LangId.Menu_MnuViewPreviousFrame,    API.IG_ViewPreviousFrame,   Hotkey.Ctrl, Key.Left),
+        new(LangId.Menu_MnuViewFirstFrame,       API.IG_ViewFirstFrame,      Hotkey.Ctrl, Key.Up),
+        new(LangId.Menu_MnuViewLastFrame,        API.IG_ViewLastFrame,       Hotkey.Ctrl, Key.Down),
 
 
         // Zoom
-        new(LangId.FrmMain_MnuCustomZoom,       API.IG_CustomZoom,          Key.Z),
-        new(LangId.FrmMain_MnuActualSize,       API.IG_SetZoom, "1",        [new(Key.D0), new(Key.NumPad0)]),
-        new(LangId.FrmMain_MnuZoomIn,           API.IG_ZoomIn,              Key.Add),
-        new(LangId.FrmMain_MnuZoomOut,          API.IG_ZoomOut,             Key.Subtract),
-        new(LangId.FrmMain_MnuAutoZoom,         API.IG_SetZoomMode, nameof(ZoomMode.AutoZoom),      [new(Key.D1), new(Key.NumPad1)]),
-        new(LangId.FrmMain_MnuLockZoom,         API.IG_SetZoomMode, nameof(ZoomMode.LockZoom),      [new(Key.D2), new(Key.NumPad2)]),
-        new(LangId.FrmMain_MnuScaleToWidth,     API.IG_SetZoomMode, nameof(ZoomMode.ScaleToWidth),  [new(Key.D3), new(Key.NumPad3)]),
-        new(LangId.FrmMain_MnuScaleToHeight,    API.IG_SetZoomMode, nameof(ZoomMode.ScaleToHeight), [new(Key.D4), new(Key.NumPad4)]),
-        new(LangId.FrmMain_MnuScaleToFit,       API.IG_SetZoomMode, nameof(ZoomMode.ScaleToFit),    [new(Key.D5), new(Key.NumPad5)]),
-        new(LangId.FrmMain_MnuScaleToFill,      API.IG_SetZoomMode, nameof(ZoomMode.ScaleToFill),   [new(Key.D6), new(Key.NumPad6)]),
+        new(LangId.Menu_MnuCustomZoom,       API.IG_CustomZoom,          Key.Z),
+        new(LangId.Menu_MnuActualSize,       API.IG_SetZoom, "1",        [new(Key.D0), new(Key.NumPad0)]),
+        new(LangId.Menu_MnuZoomIn,           API.IG_ZoomIn,              Key.Add),
+        new(LangId.Menu_MnuZoomOut,          API.IG_ZoomOut,             Key.Subtract),
+        new(LangId.Menu_MnuAutoZoom,         API.IG_SetZoomMode, nameof(ZoomMode.AutoZoom),      [new(Key.D1), new(Key.NumPad1)]),
+        new(LangId.Menu_MnuLockZoom,         API.IG_SetZoomMode, nameof(ZoomMode.LockZoom),      [new(Key.D2), new(Key.NumPad2)]),
+        new(LangId.Menu_MnuScaleToWidth,     API.IG_SetZoomMode, nameof(ZoomMode.ScaleToWidth),  [new(Key.D3), new(Key.NumPad3)]),
+        new(LangId.Menu_MnuScaleToHeight,    API.IG_SetZoomMode, nameof(ZoomMode.ScaleToHeight), [new(Key.D4), new(Key.NumPad4)]),
+        new(LangId.Menu_MnuScaleToFit,       API.IG_SetZoomMode, nameof(ZoomMode.ScaleToFit),    [new(Key.D5), new(Key.NumPad5)]),
+        new(LangId.Menu_MnuScaleToFill,      API.IG_SetZoomMode, nameof(ZoomMode.ScaleToFill),   [new(Key.D6), new(Key.NumPad6)]),
 
 
         // Panning
-        new(LangId.FrmMain_MnuPanLeft,          API.IG_PanLeft,             [new(MKeys.Alt, Key.Left)]),
-        new(LangId.FrmMain_MnuPanRight,         API.IG_PanRight,            [new(MKeys.Alt, Key.Right)]),
-        new(LangId.FrmMain_MnuPanUp,            API.IG_PanUp,               [new(MKeys.Alt, Key.Up)]),
-        new(LangId.FrmMain_MnuPanDown,          API.IG_PanDown,             [new(MKeys.Alt, Key.Down)]),
-        new(LangId.FrmMain_MnuPanToLeftSide,    API.IG_PanToLeft,           [new(Hotkey.Ctrl | MKeys.Alt, Key.Left)]),
-        new(LangId.FrmMain_MnuPanToRightSide,   API.IG_PanToRight,          [new(Hotkey.Ctrl | MKeys.Alt, Key.Right)]),
-        new(LangId.FrmMain_MnuPanToTop,         API.IG_PanToTop,            [new(Hotkey.Ctrl | MKeys.Alt, Key.Up)]),
-        new(LangId.FrmMain_MnuPanToBottom,      API.IG_PanToBottom,         [new(Hotkey.Ctrl | MKeys.Alt, Key.Down)]),
+        new(LangId.Menu_MnuPanLeft,          API.IG_PanLeft,             [new(MKeys.Alt, Key.Left)]),
+        new(LangId.Menu_MnuPanRight,         API.IG_PanRight,            [new(MKeys.Alt, Key.Right)]),
+        new(LangId.Menu_MnuPanUp,            API.IG_PanUp,               [new(MKeys.Alt, Key.Up)]),
+        new(LangId.Menu_MnuPanDown,          API.IG_PanDown,             [new(MKeys.Alt, Key.Down)]),
+        new(LangId.Menu_MnuPanToLeftSide,    API.IG_PanToLeft,           [new(Hotkey.Ctrl | MKeys.Alt, Key.Left)]),
+        new(LangId.Menu_MnuPanToRightSide,   API.IG_PanToRight,          [new(Hotkey.Ctrl | MKeys.Alt, Key.Right)]),
+        new(LangId.Menu_MnuPanToTop,         API.IG_PanToTop,            [new(Hotkey.Ctrl | MKeys.Alt, Key.Up)]),
+        new(LangId.Menu_MnuPanToBottom,      API.IG_PanToBottom,         [new(Hotkey.Ctrl | MKeys.Alt, Key.Down)]),
 
 
         // Image
-        new(LangId.FrmMain_MnuRefresh,              API.IG_Refresh,             Key.R),
-        new(LangId.FrmMain_MnuReload,               API.IG_Reload,              Hotkey.Ctrl, Key.R),
-        new(LangId.FrmMain_MnuReloadImageList,      API.IG_ReloadList,          Hotkey.Ctrl | MKeys.Shift, Key.R),
-        new(LangId.FrmMain_MnuUnload,               API.IG_Unload,              Key.U),
-        new(LangId.FrmSettings_EnableExplorerSortOrder,  API.IG_ToggleExplorerSortOrder),
+        new(LangId.Menu_MnuRefresh,                     API.IG_Refresh),
+        new(LangId.Menu_MnuReload,                      API.IG_Reload,              Hotkey.Ctrl, Key.R),
+        new(LangId.Menu_MnuReloadImageList,             API.IG_ReloadList,          Hotkey.Ctrl | MKeys.Shift, Key.R),
+        new(LangId.Menu_MnuUnload,                      API.IG_Unload,              Key.U),
+        new(LangId.Settings_EnableExplorerSortOrder,    API.IG_ToggleExplorerSortOrder),
         new(LangId.ImageOrderBy_Name,               API.IG_ToggleLoadingOrderBy,    nameof(ImageOrderBy.Name),         [new(Hotkey.Ctrl | MKeys.Alt, Key.A)]),
         new(LangId.ImageOrderBy_Random,             API.IG_SetLoadingOrderBy,       nameof(ImageOrderBy.Random)),
         new(LangId.ImageOrderBy_FileSize,           API.IG_SetLoadingOrderBy,       nameof(ImageOrderBy.FileSize)),
@@ -119,71 +126,88 @@ public partial class AppAPIProvider
         new(LangId.ImageOrderBy_ExifRating,         API.IG_SetLoadingOrderBy,       nameof(ImageOrderBy.ExifRating)),
         new(LangId.ImageOrderType_Asc,              API.IG_SetLoadingOrderType,     nameof(ImageOrderType.Asc)),
         new(LangId.ImageOrderType_Desc,             API.IG_SetLoadingOrderType,     nameof(ImageOrderType.Desc)),
-        new(LangId.FrmMain_MnuEdit,                 API.IG_OpenEditingApp,          Key.E),
-        new(LangId.FrmMain_MnuInvertColors,         API.IG_InvertColors,            Hotkey.Ctrl, Key.I),
-        new(LangId.FrmMain_MnuToggleImageAnimation, API.IG_ToggleImageAnimation,    Hotkey.Ctrl, Key.Space),
-        new(LangId.FrmMain_MnuRotateLeft,           API.IG_Rotate,              nameof(RotateOption.Left),          [new(Hotkey.Ctrl, Key.OemPeriod)]),
-        new(LangId.FrmMain_MnuRotateRight,          API.IG_Rotate,              nameof(RotateOption.Right),         [new(Hotkey.Ctrl, Key.OemQuestion)]),
-        new(LangId.FrmMain_MnuFlipHorizontal,       API.IG_FlipImage,           nameof(FlipOptions.Horizontal),     [new(Hotkey.Ctrl, Key.OemSemicolon)]),
-        new(LangId.FrmMain_MnuFlipVertical,         API.IG_FlipImage,           nameof(FlipOptions.Vertical),       [new(Hotkey.Ctrl, Key.OemQuotes)]),
-        new(LangId.FrmMain_MnuSetDesktopBackground, API.IG_SetDesktopBackground),
-        new(LangId.FrmMain_MnuSetLockScreen,        API.IG_SetLockScreenImage),
+        new(LangId.Menu_MnuEdit,                    API.IG_OpenEditingApp,          Key.E),
+        new(LangId.Menu_MnuInvertColors,            API.IG_InvertColors,            Hotkey.Ctrl, Key.I),
+        new(LangId.Menu_MnuToggleImageAnimation,    API.IG_ToggleImageAnimation,    Hotkey.Ctrl, Key.Space),
+        new(LangId.Menu_MnuRotateLeft,              API.IG_Rotate,              nameof(RotateOption.Left),          [new(Hotkey.Ctrl, Key.OemPeriod)]),
+        new(LangId.Menu_MnuRotateRight,             API.IG_Rotate,              nameof(RotateOption.Right),         [new(Hotkey.Ctrl, Key.OemQuestion)]),
+        new(LangId.Menu_MnuFlipHorizontal,          API.IG_FlipImage,           nameof(FlipOptions.Horizontal),     [new(Hotkey.Ctrl, Key.OemSemicolon)]),
+        new(LangId.Menu_MnuFlipVertical,            API.IG_FlipImage,           nameof(FlipOptions.Vertical),       [new(Hotkey.Ctrl, Key.OemQuotes)]),
+        new(LangId.Menu_MnuSetDesktopBackground,    API.IG_SetDesktopBackground),
+        new(LangId.Menu_MnuSetLockScreen,           API.IG_SetLockScreenImage),
 
 
         // Clipboard
-        new(LangId.FrmMain_MnuPasteImage,       API.IG_PasteImage,          Hotkey.Ctrl, Key.V),
-        new(LangId.FrmMain_MnuCopyImagePixels,  API.IG_CopyImagePixels,     Hotkey.Ctrl | MKeys.Shift, Key.C),
-        new(LangId.FrmMain_MnuCopyFile,         API.IG_CopyFiles,           Hotkey.Ctrl, Key.C),
-        new(LangId.FrmMain_MnuCutFile,          API.IG_CutFiles,            Hotkey.Ctrl, Key.X),
-        new(LangId.FrmMain_MnuCopyPath,         API.IG_CopyImagePath,       Hotkey.Ctrl, Key.L),
-        new(LangId.FrmMain_MnuClearClipboard,   API.IG_ClearClipboard,      Hotkey.Ctrl, Key.OemTilde),
+        new(LangId.Menu_MnuPasteImage,       API.IG_PasteImage,          Hotkey.Ctrl, Key.V),
+        new(LangId.Menu_MnuCopyImagePixels,  API.IG_CopyImagePixels,     Hotkey.Ctrl | MKeys.Shift, Key.C),
+        new(LangId.Menu_MnuCopyFile,         API.IG_CopyFiles,           Hotkey.Ctrl, Key.C),
+        .. SupportedOn(BHelper.OS != OSType.Mac, [
+            new(LangId.Menu_MnuCutFile,      API.IG_CutFiles,            Hotkey.Ctrl, Key.X),
+        ]),
+        new(LangId.Menu_MnuCopyPath,         API.IG_CopyImagePath,       Hotkey.Ctrl, Key.L),
+        new(LangId.Menu_MnuClearClipboard,   API.IG_ClearClipboard,      Hotkey.Ctrl, Key.OemTilde),
 
 
         // Window modes
-        new(LangId.FrmMain_MnuWindowFit,            API.IG_ToggleWindowFit,             Key.F9),
-        new(LangId.FrmMain_MnuFrameless,            API.IG_ToggleFrameless,             Key.F10),
-        new(LangId.FrmMain_MnuFullScreen,           API.IG_ToggleFullScreen,            Key.F11),
-        new(LangId.FrmMain_MnuSlideshow,            API.IG_ToggleSlideshow,             Key.F12),
-        new(LangId.FrmSlideshow_MnuPauseResumeSlideshow,    API.IG_ToggleSlideshowPlayback,     Key.Space),
+        new(LangId.Menu_MnuWindowFit,           API.IG_ToggleWindowFit,             Key.F9),
+        .. SupportedOn(BHelper.OS != OSType.Linux, [
+            new(LangId.Menu_MnuFrameless,       API.IG_ToggleFrameless,             Key.F10),
+        ]),
+        new(LangId.Menu_MnuFullScreen,          API.IG_ToggleFullScreen,            Key.F11),
+        new(LangId.Menu_MnuSlideshow,           API.IG_ToggleSlideshow,             Key.F12),
+        new(LangId._MnuPauseResumeSlideshow,    API.IG_ToggleSlideshowPlayback,     Key.Space),
 
 
         // Layout
-        new(LangId.FrmMain_MnuToggleTopMost,            API.IG_ToggleWindowTopMost),
-        new(LangId.FrmMain_MnuToggleToolbar,            API.IG_ToggleToolbar,           Key.T),
-        new(LangId.FrmMain_MnuToggleGallery,            API.IG_ToggleGallery,           Key.G),
-        new(LangId.FrmMain_MnuToggleCheckerboard,       API.IG_ToggleCheckerboard,      Key.B),
-        new(LangId.FrmMain_MnuChangeBackgroundColor,    API.IG_SetBackgroundColor,      Key.M),
+        new(LangId.Menu_MnuToggleTopMost,            API.IG_ToggleWindowTopMost),
+        new(LangId.Menu_MnuToggleToolbar,            API.IG_ToggleToolbar,           Key.T),
+        new(LangId.Menu_MnuToggleGallery,            API.IG_ToggleGallery,           Key.G),
+        new(LangId.Menu_MnuToggleCheckerboard,       API.IG_ToggleCheckerboard,      Key.B),
+        new(LangId.Menu_MnuChangeBackgroundColor,    API.IG_SetBackgroundColor,      Hotkey.Ctrl, Key.B),
 
 
-        // Plugins
-        new(LangId.FrmMain_MnuColorPicker,          API.IG_ToggleTool, ColorPickerToolControl.TOOL_ID,    [new(MKeys.Alt, Key.K)]),
-        new(LangId.FrmMain_MnuCropTool,             API.IG_ToggleTool, CropImageToolControl.TOOL_ID,      [new(Hotkey.Ctrl | MKeys.Alt, Key.C)]),
-        new(LangId.FrmMain_MnuFrameNav,             API.IG_ToggleTool, FrameNavToolControl.TOOL_ID,       [new(MKeys.Alt, Key.P)]),
-        new(LangId.FrmMain_MnuResizeTool,           API.IG_OpenTool, ImageResizerTool.TOOL_ID,            [new(MKeys.Alt, Key.R)]),
-        new(LangId.FrmMain_MnuLosslessCompression,  API.IG_OpenTool, LosslessCompressionTool.TOOL_ID,     [new(MKeys.Alt, Key.S)]),
-        new(LangId.FrmMain_MnuGetMoreTools,         API.IG_GetMoreTools),
+        // Tools
+        new(LangId.Menu_MnuColorPicker,         API.IG_ToggleTool, ColorPickerToolControl.TOOL_ID,      [new(MKeys.Alt, Key.K)]),
+        new(LangId.Menu_MnuCropTool,            API.IG_ToggleTool, CropImageToolControl.TOOL_ID,        [new(Hotkey.Ctrl | MKeys.Alt, Key.C)]),
+        new(LangId.Menu_MnuFrameNav,            API.IG_ToggleTool, FrameNavToolControl.TOOL_ID,         [new(MKeys.Alt, Key.P)]),
+        new(LangId.Menu_MnuHdrToneMapper,       API.IG_ToggleTool, HdrToneMapperToolControl.TOOL_ID,    [new(Key.H)]),
+        new(LangId.Menu_MnuResizeTool,          API.IG_OpenTool, ImageResizerTool.TOOL_ID,              [new(MKeys.Alt, Key.R)]),
+        new(LangId.Menu_MnuLosslessCompression, API.IG_OpenTool, LosslessCompressionTool.TOOL_ID,       [new(MKeys.Alt, Key.S)]),
+        new(LangId.Menu_MnuToolsSettings,       API.IG_OpenSettings, nameof(SettingsNavId.Tools)),
 
 
         // Settings
-        new(LangId.FrmMain_MnuSettings,                     API.IG_OpenSettings,    Hotkey.Ctrl, Key.OemComma),
+        new(LangId.Menu_MnuPlugins,             API.IG_OpenSettings, nameof(SettingsNavId.Plugins)),
+        new(LangId.Menu_MnuSettings,            API.IG_OpenSettings,                                    Hotkey.Ctrl, Key.OemComma),
 
 
         // Help
-        new(LangId.FrmMain_MnuAbout,                        API.IG_OpenAboutWindow, Key.F1),
-        new(LangId._CheckForUpdate,                         API.IG_CheckForUpdate),
-        new(LangId.FrmMain_MnuReportIssue,                  API.IG_ReportIssue),
-        new(LangId.FrmMain_MnuSetDefaultPhotoViewer,        API.IG_SetDefaultPhotoViewer),
-        new(LangId.FrmMain_MnuRemoveDefaultPhotoViewer,     API.IG_RemoveDefaultPhotoViewer),
+        new(LangId.Menu_MnuAbout,                       API.IG_OpenAboutWindow, Key.F1),
+        new(LangId.Menu_MnuUpgradeLicense,              API.IG_ManageLicense),
+        new(LangId.Menu_MnuManageLicense,               API.IG_ManageLicense),
+        new(LangId._CheckForUpdate,                     API.IG_CheckForUpdate),
+        new(LangId.Menu_MnuReportIssue,                 API.IG_ReportIssue),
+        new(LangId.Menu_MnuQuickSetup,                  API.IG_QuickSetup),
+        new(LangId.Menu_MnuSetDefaultPhotoViewer,       API.IG_SetDefaultPhotoViewer),
+        new(LangId.Menu_MnuRemoveDefaultPhotoViewer,    API.IG_RemoveDefaultPhotoViewer),
 
 
         // Exit
-        new(LangId.FrmMain_MnuExit,                         API.IG_Exit,            [new(Key.Escape), new(Hotkey.Ctrl, Key.W)]),
+        new(LangId.Menu_MnuExit,                         API.IG_Exit,            [new(Key.Escape), new(Hotkey.Ctrl, Key.W)]),
     ];
+
+
+    /// <summary>
+    /// Returns <paramref name="actions"/> only on a supporting OS,
+    /// so a platform-specific menu action never registers a hotkey that throws.
+    /// </summary>
+    private static HotkeySingleAction[] SupportedOn(bool isSupported, HotkeySingleAction[] actions)
+        => isSupported ? actions : [];
 
 
     // a map of menu and its action.
     private static Dictionary<LangId, HotkeySingleAction> _menuMap { get; set; }
-        = new(_defaultMenuList.Select(ac => new KeyValuePair<LangId, HotkeySingleAction>(Lang.GetKey(ac.LangKey)!.Value, ac)));
+        = new(DefaultMenuList.Select(ac => new KeyValuePair<LangId, HotkeySingleAction>(Lang.GetKey(ac.LangKey)!.Value, ac)));
 
 
     /// <summary>
@@ -198,9 +222,24 @@ public partial class AppAPIProvider
     /// </summary>
     public void RegisterHotkeys()
     {
+        // clear first so this can be re-run after a settings change (e.g. toolbar buttons
+        // edited): rebuild the map from scratch instead of leaving stale TryAdd entries
+        AppHotkeysMap.Clear();
+
+        // reset menu actions to their built-in hotkeys first, so a removed user-hotkey reverts to
+        // default (step 2 below only overrides keys present in the user config, never clears them)
+        foreach (var def in DefaultMenuList)
+        {
+            var key = Lang.GetKey(def.LangKey);
+            if (key is not null && _menuMap.TryGetValue(key.Value, out var action))
+            {
+                action.Hotkeys = def.Hotkeys;
+            }
+        }
+
         // 0. load main menu button hotkey text
-        var mainMenuHotkeys = Core.Config.MenuHotkeys.GetValueOrDefault(LangId.FrmMain_MnuMain)
-            ?? _menuMap.GetValueOrDefault(LangId.FrmMain_MnuMain)?.Hotkeys
+        var mainMenuHotkeys = Core.Config.MenuHotkeys.GetValueOrDefault(LangId.Menu_MnuMain)
+            ?? _menuMap.GetValueOrDefault(LangId.Menu_MnuMain)?.Hotkeys
             ?? [];
         var mainMenuHotkeyText = string.Join(", ", mainMenuHotkeys.Select(hk => hk.KeyString));
 
@@ -208,7 +247,7 @@ public partial class AppAPIProvider
         MainWindowViewModel.ToolbarVM.ButtonMenuVM = new ToolbarItemModel()
         {
             Image = nameof(IgThemeIcon.MainMenu),
-            Text = nameof(LangId.FrmMain_MnuMain),
+            Text = nameof(LangId.Menu_MnuMain),
             HotkeyText = mainMenuHotkeyText,
         };
 
@@ -311,6 +350,13 @@ public partial class AppAPIProvider
             return;
         }
 
+        // Pro feature gate
+        if (FeatureManager.IsProBlocked(Lang.GetKey(action.LangKey)))
+        {
+            e.Handled = true;
+            return;
+        }
+
         var isHotkeyPressMultiTimes = hotkey.IsSame(_lastHotkeyPressed);
         var executable = action.Executable ?? string.Empty;
 
@@ -367,7 +413,9 @@ public partial class AppAPIProvider
         var isBrowsingAction = executable.Equals(nameof(API.IG_ViewByStep), StringComparison.Ordinal)
             || executable.Equals(nameof(API.IG_ViewNext), StringComparison.Ordinal)
             || executable.Equals(nameof(API.IG_ViewPrevious), StringComparison.Ordinal);
-        _isQuickBrowsingPhotos.Set(isBrowsingAction && isHotkeyPressMultiTimes);
+        // quick browsing is a Turbo-mode optimization; Sequential renders every image in full
+        _isQuickBrowsingPhotos.Set(isBrowsingAction && isHotkeyPressMultiTimes
+            && Core.Config.BrowsingMode == BrowsingMode.Turbo);
         if (_isQuickBrowsingPhotos)
         {
             Viewer.ShouldLoadFullResolution.SetFalse();
@@ -464,6 +512,26 @@ public partial class AppAPIProvider
 
         var hotkeyText = String.Join(", ", action.Hotkeys);
         return hotkeyText;
+    }
+
+
+    /// <summary>
+    /// Gets the localized menu text with its hotkey appended, for use as a button tooltip.
+    /// </summary>
+    public static string GetMenuTooltipText(LangId? langKey)
+        => GetMenuTooltipText(langKey, langKey);
+
+
+    /// <summary>
+    /// Gets <paramref name="textKey"/>'s text with <paramref name="hotkeyKey"/>'s hotkey appended,
+    /// for a button that runs a menu action under its own label.
+    /// </summary>
+    public static string GetMenuTooltipText(LangId? textKey, LangId? hotkeyKey)
+    {
+        var text = Core.Lang[textKey];
+        var hotkeyText = GetMenuHotkeyText(hotkeyKey);
+
+        return string.IsNullOrEmpty(hotkeyText) ? text : $"{text} ({hotkeyText})";
     }
 
 

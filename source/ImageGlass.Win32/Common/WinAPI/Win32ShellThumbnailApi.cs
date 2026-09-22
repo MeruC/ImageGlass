@@ -18,7 +18,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 using ImageGlass.Common.Photoing;
 using SkiaSharp;
-using System;
 using System.IO;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -29,9 +28,6 @@ namespace ImageGlass.Win32.Common;
 
 public static class Win32ShellThumbnailApi
 {
-    private static readonly Guid IID_IShellItemImageFactory = new("bcc18b79-ba16-442f-80c4-8a59c30c463b");
-
-
     /// <summary>
     /// Gets Shell thumbnail from file.
     /// </summary>
@@ -79,11 +75,11 @@ public static class Win32ShellThumbnailApi
     private static DeleteObjectSafeHandle? GetThumbnailHBitmap(string filePath,
         int width, int height, SIIGBF options)
     {
-        // create shell item, requesting IShellItemImageFactory directly
-        PInvoke.SHCreateItemFromParsingName(filePath, null, IID_IShellItemImageFactory, out var shItemObj)
+        // create shell item, requesting IShellItemImageFactory directly.
+        PInvoke.SHCreateItemFromParsingName<IShellItemImageFactory>(filePath, null, out var shItemImageFac)
             .ThrowOnFailure();
 
-        if (shItemObj is not IShellItemImageFactory shItemImageFac) return null;
+        if (shItemImageFac is null) return null;
 
         // get thumbnail
         shItemImageFac.GetImage(new SIZE(width, height), options, out var hBitmap);
@@ -111,7 +107,7 @@ public static class Win32ShellThumbnailApi
                 return null;
 
             var info = new SKImageInfo(bm.bmWidth, bm.bmHeight, SKColorType.Bgra8888, SKAlphaType.Premul);
-            var bmpOutput = new SKBitmap(info);
+            using var bmpOutput = new SKBitmap(info);
 
             var bmi = new BITMAPINFO
             {
@@ -129,8 +125,6 @@ public static class Win32ShellThumbnailApi
             if (PInvoke.GetDIBits(hdc, (HBITMAP)hBitmap.DangerousGetHandle(),
                 0, (uint)bm.bmHeight, (void*)bmpOutput.GetPixels(), &bmi, DIB_USAGE.DIB_RGB_COLORS) == 0)
             {
-                bmpOutput.Dispose();
-                bmpOutput = null;
                 return null;
             }
 

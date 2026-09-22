@@ -40,6 +40,17 @@ public class PhotoUnloadedEventArgs : EventArgs
 }
 
 
+public class DestColorProfileChangedEventArgs(bool requiresPhotoReload) : EventArgs
+{
+    /// <summary>
+    /// Whether the current photo must be re-decoded to re-apply the profile.
+    /// <see langword="false"/> when only the monitor under the window changed: the new profile
+    /// applies to later loads, but re-decoding now would flash the viewer.
+    /// </summary>
+    public bool RequiresPhotoReload { get; init; } = requiresPhotoReload;
+}
+
+
 public class PhotoSaveEventArgs(string srcFilePath, string destFilePath, ImageSaveSource saveSource) : EventArgs
 {
     public string SrcFilePath { get; init; } = srcFilePath;

@@ -35,7 +35,16 @@
     <AvaloniaResource Include="Assets\RecycleBin.png" />
     <AvaloniaResource Include="Assets\Rename.png" />
     <AvaloniaResource Include="Assets\Shield.png" />
+    <AvaloniaResource Include="Assets\Sounds\notification.wav" />
+    <AvaloniaResource Include="Assets\Svg\*.svg" />
     <AvaloniaResource Include="Assets\Warning.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pro license public key (embedded so it loads before Avalonia init) -->
+    <EmbeddedResource Include="Assets\Licensing\ig_license_2026.spki.pem">
+      <LogicalName>ig_license_2026.spki.pem</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>
@@ -49,6 +58,7 @@
     <PackageReference Include="Magick.NET-Q16-HDRI-OpenMP-arm64" Condition="'$(Platform)' == 'ARM64' And !$([MSBuild]::IsOSPlatform('osx'))" />
     <PackageReference Include="Magick.NET-Q16-HDRI-arm64" Condition="'$(Platform)' == 'ARM64' And $([MSBuild]::IsOSPlatform('osx'))" />
     <PackageReference Include="NativeMemoryArray" />
+    <PackageReference Include="NetCoreAudio" />
     <PackageReference Include="Svg.Controls.Skia.Avalonia" />
     <PackageReference Include="System.IO.Hashing" />
   </ItemGroup>
@@ -65,6 +75,9 @@
     </Compile>
     <Compile Update="Tools\ToolHostControl.axaml.cs">
       <DependentUpon>ToolHostControl.axaml</DependentUpon>
+    </Compile>
+    <Compile Update="Windows\UpdateWindow.axaml.cs">
+      <DependentUpon>UpdateWindow.axaml</DependentUpon>
     </Compile>
   </ItemGroup>
 

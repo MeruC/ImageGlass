@@ -41,6 +41,16 @@ public class Win32ShellProvider : PhDisposable, IShellProvider
 
     private static string Win32SearchFileExtension => ".search-ms";
 
+    /// <summary>
+    /// Package container that <c>%LocalAppData%</c> writes are redirected into,
+    /// or <c>null</c> when unpackaged (<c>LocalCacheFolder</c> throws without MSIX identity).
+    /// </summary>
+    private static readonly Lazy<string?> _localCacheDir = new(() =>
+    {
+        try { return ApplicationData.Current.LocalCacheFolder.Path; }
+        catch { return null; }
+    });
+
 
 
     /// <summary>
@@ -74,6 +84,7 @@ public class Win32ShellProvider : PhDisposable, IShellProvider
     protected override void OnDisposing()
     {
         base.OnDisposing();
+        AllowSleep();
         ForegroundShell = null;
     }
 
@@ -92,9 +103,13 @@ public class Win32ShellProvider : PhDisposable, IShellProvider
         var isFromSavedSearch = _foregroundShellPath.EndsWith(Win32SearchFileExtension, StringComparison.OrdinalIgnoreCase);
         var isFromSameDir = inputImageDirPath.Equals(_foregroundShellPath, StringComparison.OrdinalIgnoreCase);
 
+        // a search result lives only in the shell view, so it is the list source whatever the sort setting says
+        var isShellOnlyList = isFromSearchWindow || isFromSavedSearch;
+
         var useForegroundWindow = _foregroundShell is not null
             && !string.IsNullOrEmpty(Core.InputImagePathFromArgs)
-            && (isFromSearchWindow || isFromSavedSearch || isFromSameDir);
+            // a plain folder is enumerable without the shell, so it follows Explorer only when asked to
+            && (isShellOnlyList || (isFromSameDir && Core.Config.EnableExplorerSortOrder));
 
         return useForegroundWindow;
     }
@@ -182,7 +197,7 @@ public class Win32ShellProvider : PhDisposable, IShellProvider
     public void ShowOpenWith(string filePath)
     {
         // Uses the system shell32.dll 'OpenAs_RunDLL' entry point
-        var args = $"shell32.dll,OpenAs_RunDLL {filePath}";
+        var args = $"shell32.dll,OpenAs_RunDLL {GetActualPath(filePath)}";
 
         _ = Process.Start(new ProcessStartInfo
         {
@@ -205,9 +220,18 @@ public class Win32ShellProvider : PhDisposable, IShellProvider
     /// <summary>
     /// <inheritdoc/>
     /// </summary>
+    public void ShowShare(nint windowHandle, string[] filePaths)
+    {
+        Win32ShareApi.ShowShare(windowHandle, filePaths);
+    }
+
+
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
     public void SetWallpaper(string filePath)
     {
-        Win32DesktopApi.SetWallpaper(filePath, WallpaperStyle.Current);
+        Win32DesktopApi.SetWallpaper(GetActualPath(filePath), WallpaperStyle.Current);
     }
 
 
@@ -226,6 +250,8 @@ public class Win32ShellProvider : PhDisposable, IShellProvider
     /// </summary>
     public async Task OpenDefaultEditingAppAsync(string filePath, Action? callbackFn = null)
     {
+        filePath = GetActualPath(filePath);
+
         #region Windows 11
         if (Environment.OSVersion.Version.Major == 10
             && Environment.OSVersion.Version.Build >= 22000)
@@ -237,8 +263,8 @@ public class Win32ShellProvider : PhDisposable, IShellProvider
             {
                 _ = await ModalWindow.ShowInfoAsync(null, new ModalWindowOptions
                 {
-                    Title = Core.Lang[LangId.FrmMain_MnuEdit],
-                    Heading = Core.Lang[LangId.FrmMain_MnuEdit_AppNotFound],
+                    Title = Core.Lang[LangId.Menu_MnuEdit],
+                    Heading = Core.Lang[LangId.Menu_MnuEdit_AppNotFound],
                     Description = filePath,
                 });
                 return;
@@ -258,7 +284,7 @@ public class Win32ShellProvider : PhDisposable, IShellProvider
             {
                 _ = await ModalWindow.ShowErrorAsync(null, new ModalWindowOptions
                 {
-                    Title = string.Format(Core.Lang[LangId.FrmMain_MnuEdit], "(Microsoft Paint)"),
+                    Title = string.Format(Core.Lang[LangId.Menu_MnuEdit], "(Microsoft Paint)"),
                     Description = ex.Message + $"\r\n\r\n{filePath}",
                 });
             }
@@ -308,7 +334,7 @@ public class Win32ShellProvider : PhDisposable, IShellProvider
             // show error: file does not have associated app
             _ = await ModalWindow.ShowErrorAsync(null, new ModalWindowOptions
             {
-                Title = string.Format(Core.Lang[LangId.FrmMain_MnuEdit]),
+                Title = string.Format(Core.Lang[LangId.Menu_MnuEdit]),
                 Description = win32ErrorMsg + $"\r\n\r\n{filePath}",
             });
         }
@@ -320,10 +346,91 @@ public class Win32ShellProvider : PhDisposable, IShellProvider
     /// <summary>
     /// <inheritdoc/>
     /// </summary>
-    public async Task SetDefaultPhotoViewerAsync(string[] extensions, bool enable)
+    public async Task<DefaultAppScope?> SetDefaultPhotoViewerAsync(string[] extensions, bool enable)
     {
-        await Win32DefaultAppApi.SetDefaultPhotoViewerAsync(extensions, enable);
+        return await Win32DefaultAppApi.SetDefaultPhotoViewerAsync(extensions, enable);
     }
+
+
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public void RepairDefaultViewerRegistration() => Win32DefaultAppApi.RepairDefaultViewerRegistration();
+
+
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public DefaultAppScope GetDefaultViewerScope() => Win32DefaultAppApi.GetScope();
+
+
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public bool IsDefaultViewerConfigurable => !Win32AppIdentity.IsPackaged || Win32AppIdentity.IsUnvirtualizedResources;
+
+
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public bool IsPackagedApp => Win32AppIdentity.IsPackaged;
+
+
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public string InstallChannelId => Win32AppIdentity.IsMsStorePackage
+        ? "msstore"
+        : Win32AppIdentity.IsPackaged ? "msix"
+        : ConfigMode.IsPortable ? "zip" : "msi";
+
+
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public string GetActualPath(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return path;
+
+        // BHelper.BasePath resolves through here on every call, so keep the WinRT probe cached
+        var localCache = _localCacheDir.Value;
+        if (localCache is null) return path;
+
+        // only %LocalAppData% is virtualized
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (!BHelper.IsPathContainedIn(path, localAppData)) return path;
+
+        // MSIX redirects newly-created AppData\Local writes to <pkg>\LocalCache\Local and reads it
+        // first; point at that copy when it physically exists, else the real (write-through) path
+        var rel = Path.GetRelativePath(localAppData, path);
+        var container = Path.Combine(localCache, "Local", rel);
+
+        return Directory.Exists(container) || File.Exists(container) ? container : path;
+    }
+
+
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public void DetachIme(nint windowHandle) => Win32ImeApi.DetachIme(windowHandle);
+
+
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public void SetTitleBarDarkMode(nint windowHandle, bool isDark) => Win32WindowApi.SetTitleBarDarkMode(windowHandle, isDark);
+
+
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public void PreventSleep(string reason) => Win32PowerApi.PreventSleep();
+
+
+    /// <summary>
+    /// <inheritdoc/>
+    /// </summary>
+    public void AllowSleep() => Win32PowerApi.AllowSleep();
 
     #endregion // Public Methods
 

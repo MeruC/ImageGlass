@@ -33,37 +33,76 @@ namespace ImageGlass.Common.ServiceProviders;
 internal static class FeatureManager
 {
     private static FrozenSet<string> _locked = FrozenSet<string>.Empty;
+    private static FrozenSet<LangId> _proGated = FrozenSet<LangId>.Empty;
     private static readonly Lock _lock = new();
+
+    // Menu features that require Pro; gated (badged) until a valid license is active.
+    private static readonly FrozenSet<LangId> _proFeatureKeys =
+        FrozenSet.ToFrozenSet(new[] { LangId.Menu_MnuHdrToneMapper });
+
+    // Gated features Classic can still open as a read-only preview.
+    private static readonly FrozenSet<LangId> _proPreviewKeys =
+        FrozenSet.ToFrozenSet(new[] { LangId.Menu_MnuHdrToneMapper });
 
 
     /// <summary>
-    /// Rebuilds the lock snapshot from Config.LockFeatures.
+    /// Rebuilds the lock and Pro-gate snapshots from the current license + config.
     /// </summary>
     public static void Refresh()
     {
-        if (!Const.ENABLE_LOCK_FEATURES) return;
+        // admin-only, already Pro-gated at capture
+        var newLocked = Config.LockedFeatures;
 
-        var newLocked = FrozenSet.ToFrozenSet(Core.Config.LockedFeatures, StringComparer.OrdinalIgnoreCase);
+        // consumer Pro features stay gated until a license is active
+        var newProGated = Core.IsProEnabled ? FrozenSet<LangId>.Empty : _proFeatureKeys;
 
         lock (_lock)
         {
             _locked = newLocked;
+            _proGated = newProGated;
         }
     }
 
 
     /// <summary>
+    /// Checks if a menu key is a Pro feature that is not yet unlocked.
+    /// </summary>
+    public static bool IsProGated(LangId? langKey)
+        => langKey is LangId key && _proGated.Contains(key);
+
+
+    /// <summary>
+    /// Checks if a menu key is a Pro feature Classic must not run at all: gated and not previewable.
+    /// </summary>
+    public static bool IsProBlocked(LangId? langKey)
+        => IsProGated(langKey) && !_proPreviewKeys.Contains(langKey!.Value);
+
+
+    /// <summary>
     /// Checks if an API is locked.
     /// </summary>
-    public static bool IsLocked(API api) => Const.ENABLE_LOCK_FEATURES && _locked.Contains(api.ToString("G"));
+    public static bool IsLocked(API api) => _locked.Contains(api.ToString("G"));
 
 
     /// <summary>
     /// Checks if an API name is locked.
     /// </summary>
-    public static bool IsLocked(string? apiName) => Const.ENABLE_LOCK_FEATURES
-        && !string.IsNullOrEmpty(apiName)
-        && _locked.Contains(apiName);
+    public static bool IsLocked(string? apiName) => !string.IsNullOrEmpty(apiName) && _locked.Contains(apiName);
+
+
+    /// <summary>
+    /// Whether interactive zoom (mouse-wheel / touch / touchpad) is locked because a zoom API is
+    /// locked. Conservative: any zoom direction being locked disables interactive zoom entirely.
+    /// </summary>
+    public static bool IsZoomLocked() => IsLocked(API.IG_ZoomIn) || IsLocked(API.IG_ZoomOut);
+
+
+    /// <summary>
+    /// Whether interactive pan (mouse-wheel / touch / touchpad) is locked because a pan API is
+    /// locked. Conservative: any pan direction being locked disables interactive pan entirely.
+    /// </summary>
+    public static bool IsPanLocked() => IsLocked(API.IG_PanLeft) || IsLocked(API.IG_PanRight)
+        || IsLocked(API.IG_PanUp) || IsLocked(API.IG_PanDown);
 
 
     /// <summary>
@@ -71,8 +110,6 @@ internal static class FeatureManager
     /// </summary>
     public static bool IsLocked(LangId? langKey)
     {
-        if (!Const.ENABLE_LOCK_FEATURES) return false;
-
         var action = AppAPIProvider.GetMenuAction(langKey);
         return IsLocked(action?.Executable);
     }
@@ -83,8 +120,6 @@ internal static class FeatureManager
     /// </summary>
     public static void HideLockedMenuItems(ItemCollection items)
     {
-        if (!Const.ENABLE_LOCK_FEATURES) return;
-
         for (int i = items.Count - 1; i >= 0; i--)
         {
             if (items[i] is not PhMenuItem mnu) continue;

@@ -52,7 +52,7 @@ public partial class MainWindowViewModel : PhReactive
             field = value;
             OnPropertyChanged();
         }
-    } = BHelper.AppName;
+    } = BHelper.AppDisplayName;
 
 
     public MainWindowViewModel(PhWindow window)

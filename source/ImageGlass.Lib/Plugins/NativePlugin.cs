@@ -22,6 +22,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace ImageGlass.Plugins;
 
@@ -56,6 +57,12 @@ internal sealed unsafe class NativePlugin : PhDisposable
     /// </summary>
     public List<NativeCodecEntry> Codecs { get; } = [];
 
+    /// <summary>
+    /// Shared liveness gate; marked dead before the library is freed so late buffer
+    /// releases no-op instead of calling into the unloaded library.
+    /// </summary>
+    public PluginLiveToken LiveToken { get; } = new();
+
 
     /// <summary>
     /// Creates a wrapper around one loaded native plugin instance.
@@ -74,6 +81,9 @@ internal sealed unsafe class NativePlugin : PhDisposable
     /// </summary>
     protected override void OnDisposing()
     {
+        // Mark dead first so buffer releases stop calling into the library we're unmapping.
+        LiveToken.MarkDead();
+
         // Give the plugin a chance to release its own process-lifetime state.
         try
         {
@@ -125,6 +135,75 @@ internal readonly struct NativeCodecEntry
     {
         CodecApiPtr = codecApiPtr;
         Capability = capability;
+    }
+}
+
+
+/// <summary>
+/// Thread-safe gate tying use of a plugin to its library's lifetime. Calling into a freed library
+/// faults uncatchably, so every crossing goes through here and <see cref="MarkDead"/> drains.
+/// </summary>
+internal sealed class PluginLiveToken
+{
+    private readonly Lock _gate = new();
+    private bool _isAlive = true;
+    private int _entered;
+
+    /// <summary>
+    /// Runs <paramref name="release"/> under the gate only while the plugin is loaded.
+    /// </summary>
+    public void RunIfAlive(Action release)
+    {
+        lock (_gate)
+        {
+            if (!_isAlive) return;
+            release();
+        }
+    }
+
+    /// <summary>
+    /// Registers an in-flight native call; <c>false</c> means the plugin is already dead.
+    /// Pair every <c>true</c> with <see cref="Exit"/> in a <c>finally</c>.
+    /// </summary>
+    public bool TryEnter()
+    {
+        lock (_gate)
+        {
+            if (!_isAlive) return false;
+            _entered++;
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Releases an entry taken by <see cref="TryEnter"/>.
+    /// </summary>
+    public void Exit()
+    {
+        lock (_gate)
+        {
+            if (_entered > 0) _entered--;
+        }
+    }
+
+    /// <summary>
+    /// Marks the plugin dead and blocks until in-flight calls finish, so the caller can free the
+    /// library. Never call from inside a <see cref="TryEnter"/> scope.
+    /// </summary>
+    public void MarkDead()
+    {
+        // flag first, so no new entry can start
+        lock (_gate) { _isAlive = false; }
+
+        var spin = new SpinWait();
+        while (true)
+        {
+            lock (_gate)
+            {
+                if (_entered == 0) return;
+            }
+            spin.SpinOnce();
+        }
     }
 }
 

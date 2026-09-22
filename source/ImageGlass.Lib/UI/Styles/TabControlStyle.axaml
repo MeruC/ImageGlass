@@ -1,0 +1,34 @@
+<Styles
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:types="using:ImageGlass.Common.Types">
+
+    <!--  TabControl: header row flush with the panel edge, so a page can pad itself and still align  -->
+
+    <Styles.Resources>
+        <!--  horizontal padding of the header row; override in a TabControl.Resources to match its content  -->
+        <Thickness x:Key="PhTabHeaderPadding">0</Thickness>
+    </Styles.Resources>
+
+
+    <Style Selector="TabControl /template/ ItemsPresenter#PART_ItemsPresenter > WrapPanel">
+        <Setter Property="Margin" Value="{DynamicResource PhTabHeaderPadding}" />
+    </Style>
+
+
+    <Style Selector="TabItem">
+        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="0,0,24,0" />
+        <Setter Property="FontSize" Value="{x:Static types:Const.FONT_SIZE_SUBTITLE}" />
+        <Setter Property="FontWeight" Value="Normal" />
+        <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+    </Style>
+
+
+    <!--  Fluent recolors the header per state from its own theme trigger, so ours has to be a trigger too  -->
+    <Style Selector="TabItem:selected, TabItem:pointerover, TabItem:pressed, TabItem:selected:pointerover, TabItem:selected:pressed">
+        <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+    </Style>
+
+</Styles>

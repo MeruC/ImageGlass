@@ -1060,22 +1060,18 @@ public partial class FrmMain
 
         if (string.IsNullOrEmpty(fileToPrint))
         {
-            _ = Config.ShowError(this,
-                Config.Language[$"_._CreatingFileError"],
-                Config.Language[langPath]);
+            fileToPrint = currentFile;
         }
-        else
+
+        try
         {
-            try
-            {
-                PrintService.OpenPrintPictures(fileToPrint);
-            }
-            catch (Exception ex)
-            {
-                _ = Config.ShowError(this,
-                    $"{ex.Source}:\r\n{ex.Message}", "",
-                    Config.Language[$"{langPath}._Error"]);
-            }
+            PrintService.OpenPrintPictures(fileToPrint);
+        }
+        catch (Exception ex)
+        {
+            _ = Config.ShowError(this,
+                $"{ex.Source}:\r\n{ex.Message}", "",
+                Config.Language[$"{langPath}._Error"]);
         }
 
 

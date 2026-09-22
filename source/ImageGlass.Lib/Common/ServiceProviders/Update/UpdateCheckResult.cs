@@ -48,7 +48,11 @@ public sealed class UpdateCheckResult
     public Exception? Exception { get; init; }
 
 
-    public static UpdateCheckResult NoUpdate() => new() { Status = UpdateCheckStatus.NoUpdate };
+    public static UpdateCheckResult NoUpdate(UpdateReleaseInfo? release = null) => new()
+    {
+        Status = UpdateCheckStatus.NoUpdate,
+        Release = release,
+    };
 
     public static UpdateCheckResult Available(UpdateReleaseInfo release) => new()
     {

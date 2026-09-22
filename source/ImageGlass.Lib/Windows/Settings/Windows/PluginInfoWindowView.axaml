@@ -1,0 +1,191 @@
+<ui:PhControl
+    x:Class="ImageGlass.Common.Windows.PluginInfoWindowView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:types="using:ImageGlass.Common.Types"
+    xmlns:ui="using:ImageGlass.UI"
+    mc:Ignorable="d"
+    d:DesignWidth="480">
+
+    <ui:PhControl.Resources>
+        <!--  the Fluent template pads its 20px box out to this, which makes the table rows thick  -->
+        <x:Double x:Key="CheckBoxMinHeight">20</x:Double>
+    </ui:PhControl.Resources>
+
+    <ui:PhControl.Styles>
+        <!--  soft rounded neutral fill for value boxes (matches PhCommandPreview)  -->
+        <Style Selector="Border.valueBox">
+            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="Background" Value="{DynamicResource IG_BackgroundNeutralBrush}" />
+            <Setter Property="CornerRadius" Value="{DynamicResource ControlCornerRadius}" />
+        </Style>
+
+        <!--
+            One tab left: hide the strip so it reads as a plain panel. A TabItem only draws its
+            header (content is projected into the template's content host), so hiding the items
+            is safe and covers us if the template part is ever renamed.
+        -->
+        <Style Selector="TabControl.singleTab /template/ ItemsPresenter#PART_ItemsPresenter">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="TabControl.singleTab > TabItem">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+    </ui:PhControl.Styles>
+
+
+    <!--
+        Banner is docked to the top (pinned); the ScrollViewer fills the rest. A DockPanel hands
+        the fill child its MaxHeight-capped desired height, unlike a Grid *-row which over-
+        allocates under the window's SizeToContent and makes the bottom unreachable.
+    -->
+    <DockPanel>
+
+        <!--  Consent warning: pinned at top, edge-to-edge (shown only when enabling a plugin)  -->
+        <Border
+            x:Name="PART_ConsentRow"
+            Padding="24,14,24,20"
+            Background="{DynamicResource IG_BackgroundWarningBrush}"
+            DockPanel.Dock="Top"
+            IsVisible="False">
+            <StackPanel Spacing="8">
+                <TextBlock
+                    x:Name="PART_ConsentTitle"
+                    FontSize="{x:Static types:Const.FONT_SIZE_TITLE}"
+                    Foreground="{DynamicResource IG_TextWarningColor}"
+                    TextWrapping="Wrap" />
+                <TextBlock
+                    x:Name="PART_ConsentMessage"
+                    Foreground="{DynamicResource IG_TextWarningColor}"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+
+        <!--  Two tabs: metadata and the per-extension format picker  -->
+        <TabControl
+            x:Name="PART_Tabs"
+            MinHeight="380"
+            Padding="0">
+
+            <TabItem x:Name="PART_TabInfo" Padding="24,0,0,0">
+                <!--  Scrollable metadata  -->
+                <ScrollViewer
+                    MaxHeight="440"
+                    Padding="24,12,24,20"
+                    HorizontalContentAlignment="Stretch"
+                    HorizontalScrollBarVisibility="Disabled"
+                    VerticalScrollBarVisibility="Auto">
+                    <StackPanel Orientation="Vertical" Spacing="14">
+
+                        <!--  ID  -->
+                        <StackPanel x:Name="PART_IdRow" Spacing="5">
+                            <ui:PhTextBlock LangKey="_ID" />
+                            <Border Classes="valueBox">
+                                <SelectableTextBlock x:Name="PART_Id" />
+                            </Border>
+                        </StackPanel>
+
+                        <!--  Name  -->
+                        <StackPanel x:Name="PART_NameRow" Spacing="5">
+                            <ui:PhTextBlock LangKey="_Name" />
+                            <Border Classes="valueBox">
+                                <SelectableTextBlock x:Name="PART_Name" />
+                            </Border>
+                        </StackPanel>
+
+                        <!--  Version & Type  -->
+                        <StackPanel Orientation="Horizontal" Spacing="40">
+                            <StackPanel x:Name="PART_VersionRow" Spacing="5">
+                                <ui:PhTextBlock LangKey="_Version" />
+                                <Border Classes="valueBox">
+                                    <SelectableTextBlock x:Name="PART_Version" />
+                                </Border>
+                            </StackPanel>
+                            <StackPanel x:Name="PART_TypeRow" Spacing="5">
+                                <ui:PhTextBlock LangKey="_Type" />
+                                <Border Classes="valueBox">
+                                    <SelectableTextBlock x:Name="PART_Type" />
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!--  Description  -->
+                        <StackPanel x:Name="PART_DescriptionRow" Spacing="5">
+                            <ui:PhTextBlock LangKey="_Description" />
+                            <Border Classes="valueBox">
+                                <SelectableTextBlock x:Name="PART_Description" TextWrapping="Wrap" />
+                            </Border>
+                        </StackPanel>
+
+                        <!--  Author & Website: a * column so a long URL trims; the gap is the author's margin  -->
+                        <Grid ColumnDefinitions="Auto,*">
+                            <StackPanel
+                                x:Name="PART_AuthorRow"
+                                Margin="0,0,40,0"
+                                Spacing="5">
+                                <ui:PhTextBlock LangKey="_Author" />
+                                <Border Classes="valueBox">
+                                    <SelectableTextBlock x:Name="PART_Author" />
+                                </Border>
+                            </StackPanel>
+                            <StackPanel
+                                x:Name="PART_WebsiteRow"
+                                Grid.Column="1"
+                                Spacing="5">
+                                <ui:PhTextBlock LangKey="_Website" />
+                                <Border Classes="valueBox">
+                                    <ui:PhButton
+                                        x:Name="PART_Website"
+                                        Padding="0"
+                                        HorizontalAlignment="Left"
+                                        TextTrimming="CharacterEllipsis"
+                                        Variant="Link" />
+                                </Border>
+                            </StackPanel>
+                        </Grid>
+
+                        <!--  Executable  -->
+                        <StackPanel x:Name="PART_ExecutableRow" Spacing="5">
+                            <ui:PhTextBlock LangKey="_Executable" />
+                            <Border Classes="valueBox">
+                                <SelectableTextBlock x:Name="PART_Executable" />
+                            </Border>
+                        </StackPanel>
+
+                        <!--  Folder  -->
+                        <StackPanel x:Name="PART_FolderRow" Spacing="5">
+                            <ui:PhTextBlock LangKey="Settings_Plugins_FolderPath" />
+                            <Border Classes="valueBox">
+                                <SelectableTextBlock x:Name="PART_Folder" TextTrimming="CharacterEllipsis" />
+                            </Border>
+                            <ui:PhButton
+                                x:Name="PART_OpenFolder"
+                                HorizontalAlignment="Left"
+                                Variant="Link" />
+                        </StackPanel>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+
+            <TabItem x:Name="PART_TabFormats" Padding="0,0,24,0">
+                <!--  Per-extension decode/encode picker: hint pinned, table fills and scrolls its own rows  -->
+                <Border MaxHeight="440" Padding="24,12,24,20">
+                    <DockPanel x:Name="PART_ExtensionsRow">
+                        <ui:PhTextBlock
+                            x:Name="PART_ExtensionsHint"
+                            Margin="0,0,0,8"
+                            DockPanel.Dock="Top"
+                            TextWrapping="Wrap" />
+                        <ui:PhTableControl x:Name="PART_ExtensionsTable" HorizontalAlignment="Stretch" />
+                    </DockPanel>
+                </Border>
+            </TabItem>
+
+        </TabControl>
+    </DockPanel>
+</ui:PhControl>

@@ -39,6 +39,18 @@ namespace ImageGlass.Common.Photoing;
 public static partial class SkiaCodec
 {
     /// <summary>
+    /// Skia refuses a single pixel buffer over this size, however much memory is free.
+    /// </summary>
+    private const long MAX_PIXEL_BUFFER_BYTES = int.MaxValue;
+
+    /// <summary>
+    /// JPEG scales natively in the IDCT at eighths; largest-first to lose the least detail.
+    /// </summary>
+    private static readonly float[] NATIVE_DECODE_SCALES =
+        [7 / 8f, 6 / 8f, 5 / 8f, 4 / 8f, 3 / 8f, 2 / 8f, 1 / 8f];
+
+
+    /// <summary>
     /// Loads photo metadata from file path.
     /// </summary>
     public static async Task<PhotoMetadata> LoadMetadataAsync(string? filePath,
@@ -206,40 +218,61 @@ public static partial class SkiaCodec
         // 1. read animated formats
         if (codec.FrameCount > 0)
         {
-            var frames = meta.Frames.Select(f => (SKCodecFrameInfo)f.Animation!).ToArray();
+            var frames = meta.Frames.Select(f => f.Animation ?? CreateUnknownFrameInfo()).ToArray();
             result.Animator = new SkiaAnimator(codec, frames);
             return result;
         }
 
 
         // 2. read single-frame formats
-        using var bmpFrame = new SKBitmap(codec.Info);
+        // images past Skia's pixel-buffer ceiling decode at the largest native reduction that fits
+        var decodeInfo = GetDecodableImageInfo(codec, out var decodeScale);
+
+        // a caller that asked for a size gets a native reduced decode, like Magick's ApplySizeSettings
+        if (TryGetRequestedDecodeInfo(codec, decodeInfo, options, out var requestedInfo))
+        {
+            decodeScale *= (double)requestedInfo.Width / decodeInfo.Width;
+            decodeInfo = requestedInfo;
+        }
+
+        result.DecodeScale = decodeScale;
+        result.Size = new Size(decodeInfo.Width, decodeInfo.Height);
+
+        using var bmpFrame = new SKBitmap(decodeInfo);
         var frameIndex = Math.Min(0, options.FrameIndex);
         var codecOption = new SKCodecOptions(frameIndex);
 
-        if (codec.GetPixels(codec.Info, bmpFrame.GetPixels(), codecOption) == SKCodecResult.Success)
+        if (codec.GetPixels(decodeInfo, bmpFrame.GetPixels(), codecOption) == SKCodecResult.Success)
         {
+            // piex reports no origin for most RAW containers, so fall back to the one the metadata Ping read
+            var origin = codec.EncodedOrigin is SKEncodedOrigin.TopLeft or SKEncodedOrigin.Default
+                ? meta.Orientation
+                : codec.EncodedOrigin;
+
             // 2.1 correct rotation
             if (options.CorrectRotation)
             {
-                if (TryApplyOrientation(bmpFrame, codec.EncodedOrigin, out var bmpOriented))
+                if (TryApplyOrientation(bmpFrame, origin, out var bmpOriented))
                 {
                     if (bmpOriented is not null)
                     {
-                        result.Size = new Size(bmpOriented.Width, bmpOriented.Height);
-                        result.SingleFrame = ToSKImage(bmpOriented);
+                        using (bmpOriented)
+                        {
+                            result.Size = new Size(bmpOriented.Width, bmpOriented.Height);
+                            result.SingleFrame = ToSKImageNoCopy(bmpOriented);
+                        }
                         bmpFrame.Dispose();
                     }
                 }
 
                 if (bmpOriented is null)
                 {
-                    result.SingleFrame = ToSKImage(bmpFrame);
+                    result.SingleFrame = ToSKImageNoCopy(bmpFrame);
                 }
             }
             else
             {
-                result.SingleFrame = ToSKImage(bmpFrame);
+                result.SingleFrame = ToSKImageNoCopy(bmpFrame);
             }
         }
 
@@ -247,6 +280,63 @@ public static partial class SkiaCodec
         codec = null;
 
         return result;
+    }
+
+
+    /// <summary>
+    /// Picks the largest info the codec can decode into one pixel buffer, stepping down
+    /// through native scales when the full size does not fit. <paramref name="scale"/> is 1 if unreduced.
+    /// </summary>
+    /// <exception cref="NotSupportedException">Over the ceiling and the codec cannot scale.</exception>
+    private static SKImageInfo GetDecodableImageInfo(SKCodec codec, out double scale)
+    {
+        scale = 1;
+        var fullInfo = codec.Info;
+        if (FitsInPixelBuffer(fullInfo)) return fullInfo;
+
+        foreach (var candidate in NATIVE_DECODE_SCALES)
+        {
+            var size = codec.GetScaledDimensions(candidate);
+
+            // codecs without native scaling just echo the full size back
+            if (size.Width >= fullInfo.Width || size.Width <= 0 || size.Height <= 0) continue;
+
+            var scaledInfo = fullInfo.WithSize(size.Width, size.Height);
+            if (!FitsInPixelBuffer(scaledInfo)) continue;
+
+            scale = (double)size.Width / fullInfo.Width;
+            return scaledInfo;
+        }
+
+        var megaPixels = (double)fullInfo.Width * fullInfo.Height / 1_000_000;
+        throw new NotSupportedException(
+            $"The image is too large to open: {fullInfo.Width:n0}x{fullInfo.Height:n0} "
+            + $"({megaPixels:n0} MP) needs {(double)fullInfo.Width * fullInfo.Height * fullInfo.BytesPerPixel / 1024 / 1024 / 1024:n2} GB "
+            + $"in one buffer, but the renderer cannot address more than 2 GB per image. "
+            + $"This format cannot be decoded at a reduced size.");
+    }
+
+
+    /// <summary>
+    /// Checks whether a full pixel buffer for the info stays within Skia's byte-size ceiling.
+    /// </summary>
+    private static bool FitsInPixelBuffer(SKImageInfo info)
+    {
+        return (long)info.Width * info.Height * info.BytesPerPixel <= MAX_PIXEL_BUFFER_BYTES;
+    }
+
+
+    /// <summary>
+    /// Returns the linear scale that brings a <c>width * height * bytesPerPixel</c> buffer
+    /// under the ceiling, or 1 when it already fits.
+    /// </summary>
+    private static double GetPixelBufferFitScale(long width, long height, int bytesPerPixel)
+    {
+        var bytes = width * height * bytesPerPixel;
+        if (bytes <= 0 || bytes <= MAX_PIXEL_BUFFER_BYTES) return 1;
+
+        // area grows with the square of the linear scale; trim slightly to absorb rounding up
+        return Math.Sqrt((double)MAX_PIXEL_BUFFER_BYTES / bytes) * 0.999;
     }
 
 
@@ -372,6 +462,38 @@ public static partial class SkiaCodec
 
 
     /// <summary>
+    /// Narrows the decode to the size the caller asked for, using the codec's native scales.
+    /// </summary>
+    private static bool TryGetRequestedDecodeInfo(SKCodec codec, SKImageInfo currentInfo,
+        PhotoReadOptions options, out SKImageInfo output)
+    {
+        output = currentInfo;
+        if (options.Width == 0 || options.Height == 0) return false;
+        if (currentInfo.Width <= options.Width && currentInfo.Height <= options.Height) return false;
+
+        var scale = Math.Min((float)options.Width / currentInfo.Width,
+            (float)options.Height / currentInfo.Height);
+        var size = codec.GetScaledDimensions(scale);
+        if (size.Width <= 0 || size.Height <= 0 || size.Width >= currentInfo.Width) return false;
+
+        output = currentInfo.WithSize(size.Width, size.Height);
+        return true;
+    }
+
+
+    /// <summary>
+    /// Checks if the RAW embedded preview can be decoded and is at least the requested size.
+    /// </summary>
+    public static bool CanReadRawPreview(PhotoMetadata meta, int minWidth, int minHeight)
+    {
+        using var codec = SKCodec.Create(meta.FilePath);
+        if (codec.IsDisposed()) return false;
+
+        return codec.Info.Width >= minWidth && codec.Info.Height >= minHeight;
+    }
+
+
+    /// <summary>
     /// Derives bits per channel from a SkiaSharp color type.
     /// </summary>
     private static int GetBitsPerChannel(SKColorType colorType) => colorType switch
@@ -414,6 +536,7 @@ public static partial class SkiaCodec
 
         int frameCount = codec.FrameCount;
         var metadataList = new List<SKCodecFrameInfo>(frameCount);
+        var readCount = 0;
 
         for (int i = 0; i < frameCount; i++)
         {
@@ -421,11 +544,34 @@ public static partial class SkiaCodec
             if (codec.GetFrameInfo(i, out var info))
             {
                 metadataList.Add(info);
+                readCount++;
+            }
+            else
+            {
+                metadataList.Add(CreateUnknownFrameInfo());
             }
         }
 
+        // an animation whose every frame is unreadable is not usable; a still image keeps its empty list
+        if (frameCount > 0 && readCount == 0) return null;
+
         return metadataList;
     }
+
+
+    /// <summary>
+    /// Creates the stand-in for a frame whose info the codec cannot read.
+    /// </summary>
+    private static SKCodecFrameInfo CreateUnknownFrameInfo() => new()
+    {
+        // independent, so nothing composes itself onto a frame we know nothing about
+        RequiredFrame = -1,
+
+        // AnimatorImpl.GetFrameDelay substitutes its default for a zero delay
+        Duration = 0,
+
+        DisposalMethod = SKCodecAnimationDisposalMethod.Keep,
+    };
 
 
     /// <summary>
@@ -813,6 +959,35 @@ public static partial class SkiaCodec
 
 
     /// <summary>
+    /// Shrinks the image so its longest side is <paramref name="maxSize"/>, entirely inside Skia.
+    /// Unlike <see cref="ResizeAsync(SKImage?, double, ImageResamplingMethod, CancellationToken)"/>
+    /// this skips the Magick round-trip (4 full pixel copies), which is far too costly for the
+    /// thumbnail pipeline. Returns <c>null</c> when the image already fits (it never upscales).
+    /// </summary>
+    public static SKImage? ScaleDown(SKImage? imgSrc, double maxSize)
+    {
+        if (imgSrc.IsDisposed() || maxSize <= 0) return null;
+
+        var newSize = BHelper.ResizeRatio(new Size(imgSrc.Width, imgSrc.Height), maxSize);
+        var newWidth = Math.Max(1, (int)newSize.Width);
+        var newHeight = Math.Max(1, (int)newSize.Height);
+        if (newWidth >= imgSrc.Width && newHeight >= imgSrc.Height) return null;
+
+        // no color space: matches the Magick path, which also read raw pixels into an unmanaged info
+        var info = new SKImageInfo(newWidth, newHeight, SKColorType.Bgra8888, SKAlphaType.Premul);
+        using var bmpDest = new SKBitmap(info);
+        using var pixmap = bmpDest.PeekPixels();
+        if (pixmap is null) return null;
+
+        // Mitchell keeps downscaled thumbnails smooth without ringing
+        var sampling = new SKSamplingOptions(SKCubicResampler.Mitchell);
+        if (!imgSrc.ScalePixels(pixmap, sampling)) return null;
+
+        return ToSKImage(bmpDest);
+    }
+
+
+    /// <summary>
     /// Resizes the specified bitmap to the given dimensions using the selected resampling method.
     /// </summary>
     public static async Task<SKBitmap?> ResizeAsync(SKImage? imgSrc,
@@ -872,6 +1047,42 @@ public static partial class SkiaCodec
 
 
     /// <summary>
+    /// Creates an <see cref="SKColorSpace"/> from ICC data; <see langword="null"/> if Skia cannot parse it.
+    /// </summary>
+    public static SKColorSpace? CreateIccColorSpace(SKData? iccData)
+    {
+        if (iccData is null || iccData.IsEmpty) return null;
+
+        try
+        {
+            var profile = SKColorSpaceIccProfile.Create(iccData);
+            if (profile is null) return null;
+
+            var colorSpace = SKColorSpace.CreateIcc(profile);
+            if (colorSpace is null) profile.Dispose();
+
+            return colorSpace;
+        }
+        catch { return null; }
+    }
+
+
+    /// <summary>
+    /// Creates an <see cref="SKColorSpace"/> from raw ICC bytes.
+    /// </summary>
+    public static SKColorSpace? CreateIccColorSpace(ReadOnlySpan<byte> iccData)
+    {
+        if (iccData.IsEmpty) return null;
+
+        var data = SKData.CreateCopy(iccData);
+        var colorSpace = CreateIccColorSpace(data);
+        if (colorSpace is null) data.Dispose();
+
+        return colorSpace;
+    }
+
+
+    /// <summary>
     /// Gets Skia color profile.
     /// </summary>
     /// <param name="name">Name or Full path of color profile</param>
@@ -891,7 +1102,7 @@ public static partial class SkiaCodec
                 return results;
 
             using var data = SKData.Create(Core.ColorProfileProvider.ProfilePath);
-            results.ColorSpace = SKColorSpace.CreateIcc(data);
+            results.ColorSpace = CreateIccColorSpace(data);
             results.IsSupported = results.ColorSpace is not null; // Skia does not support all profiles
 
             return results;
@@ -902,7 +1113,7 @@ public static partial class SkiaCodec
         var magickProfile = MagickCodec.GetBuiltinColorProfile(name);
         if (magickProfile is not null)
         {
-            results.ColorSpace = SKColorSpace.CreateIcc(magickProfile.ToReadOnlySpan());
+            results.ColorSpace = CreateIccColorSpace(magickProfile.ToReadOnlySpan());
             results.IsSupported = results.ColorSpace is not null;
 
             return results;
@@ -913,7 +1124,7 @@ public static partial class SkiaCodec
         if (Path.Exists(name))
         {
             using var data = SKData.Create(name);
-            results.ColorSpace = SKColorSpace.CreateIcc(data);
+            results.ColorSpace = CreateIccColorSpace(data);
             results.IsSupported = results.ColorSpace is not null;
 
             return results;
@@ -930,12 +1141,36 @@ public static partial class SkiaCodec
     /// (<see cref="SKColorType.RgbaF32"/>) to preserve super-white HDR values from Q16-HDRI.
     /// </summary>
     public static unsafe SKImage? FromMagick(MagickImage? imgM, SKColorSpace? srcColorSpace = null, bool isHdr = false)
+        => FromMagick(imgM, srcColorSpace, isHdr, out _);
+
+
+    /// <summary>
+    /// Converts Magick image to SKImage and reports any reduction in <paramref name="decodeScale"/>.
+    /// An image past the pixel ceiling is resized down IN PLACE first, because no
+    /// <see cref="SKImage"/> can exceed it regardless of how the pixels are supplied.
+    /// </summary>
+    public static unsafe SKImage? FromMagick(MagickImage? imgM, SKColorSpace? srcColorSpace,
+        bool isHdr, out double decodeScale)
     {
+        decodeScale = 1;
         if (imgM is null) return null;
 
         // prepare image info
         var alphaType = imgM.HasAlpha ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
         var colorType = isHdr ? SKColorType.RgbaF32 : SKColorType.Rgba8888;
+
+        // shrink to fit before converting; callers hand over images they are about to discard
+        var srcWidth = imgM.Width;
+        var bpp = new SKImageInfo(1, 1, colorType).BytesPerPixel;
+        var fitScale = GetPixelBufferFitScale(srcWidth, imgM.Height, bpp);
+        if (fitScale < 1)
+        {
+            var fitW = Math.Max(1u, (uint)(srcWidth * fitScale));
+            var fitH = Math.Max(1u, (uint)(imgM.Height * fitScale));
+            imgM.Resize(fitW, fitH);
+            decodeScale = (double)imgM.Width / srcWidth;
+        }
+
         var info = new SKImageInfo((int)imgM.Width, (int)imgM.Height, colorType, alphaType);
         if (srcColorSpace is not null)
         {
@@ -1148,6 +1383,19 @@ public static partial class SkiaCodec
 
         var img = SKImage.FromBitmap(bmp);
         return img;
+    }
+
+
+    /// <summary>
+    /// Converts a finished bitmap to an image without copying its pixels; the image keeps
+    /// the buffer alive. Only call once nothing will draw into <paramref name="bmp"/> again.
+    /// </summary>
+    public static SKImage? ToSKImageNoCopy(SKBitmap? bmp)
+    {
+        if (bmp.IsDisposed()) return null;
+
+        bmp.SetImmutable();
+        return SKImage.FromBitmap(bmp);
     }
 
 

@@ -107,7 +107,7 @@ public class CropImageConfig() : PhReactive
             field = value;
             _ = OnPropertyChanged();
         }
-    } = DefaultSelectionType.Select50Percent;
+    } = DefaultSelectionType.SelectNone;
 
 
     /// <summary>

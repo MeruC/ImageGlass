@@ -49,24 +49,21 @@ public static class Color_Exts
 
 
     /// <summary>
-    /// Get brightness value from the given color.
-    /// The value is close to sRGB: <c>0.213 0.715 0.072</c>.
-    /// 
-    /// <para>
-    /// <c>floatingLightness = sR′ × 0.25 + sG′ × 0.6875 + sB′ × 0.0625</c>.
-    /// </para>
-    /// <para>
-    /// Source: <see href="https://gist.github.com/Myndex/04dd7d3143806ad050bb946d667e889f"/>
-    /// </para>
+    /// Get brightness value from the given color using Relative Luminance (W3C Standard),
+    /// returns a value between 0.0 and 1.0
     /// </summary>
     public static double GetBrightness(this Color c)
     {
-        var r = c.R;
-        var g = c.G;
-        var b = c.B;
-        var brightnessByte = (r + r + r + r + g + g + g + g + g + g + g + g + g + g + g + b) >> 4;
+        double r = c.R / 255.0;
+        double g = c.G / 255.0;
+        double b = c.B / 255.0;
 
-        return brightnessByte / 255d;
+        r = (r <= 0.03928) ? r / 12.92 : Math.Pow((r + 0.055) / 1.055, 2.4);
+        g = (g <= 0.03928) ? g / 12.92 : Math.Pow((g + 0.055) / 1.055, 2.4);
+        b = (b <= 0.03928) ? b / 12.92 : Math.Pow((b + 0.055) / 1.055, 2.4);
+
+        // Returns a value between 0.0 and 1.0
+        return (0.2126 * r) + (0.7152 * g) + (0.0722 * b);
     }
 
 
@@ -74,41 +71,59 @@ public static class Color_Exts
     /// Creates a new color with corrected brightness.
     /// </summary>
     /// <param name="color">Color to correct.</param>
-    /// <param name="brightnessFactor">The brightness correction factor.
+    /// <param name="factor">The brightness correction factor.
     /// Must be between -1 and 1.
     /// Negative values produce darker colors.</param>
-    public static Color WithBrightness(this Color color, float brightnessFactor)
+    public static Color WithBrightness(this Color color, float factor)
     {
-        if (brightnessFactor == 0) return color;
+        if (factor == 0) return color;
 
-        float red = color.R;
-        float green = color.G;
-        float blue = color.B;
+        float r = color.R;
+        float g = color.G;
+        float b = color.B;
 
-        if (brightnessFactor < 0)
+        // Perceptual Grayscale/Luma baseline
+        float luma = (0.2126f * r) + (0.7152f * g) + (0.0722f * b);
+
+        if (factor < 0)
         {
-            brightnessFactor = 1 + brightnessFactor;
-            red *= brightnessFactor;
-            green *= brightnessFactor;
-            blue *= brightnessFactor;
+            // --- DARKENING (Windows 11 Light Mode Accent Shades) ---
+            // To prevent muddy tones, Windows boosts saturation up to 25% when darkening
+            float saturationBoost = 1.0f + (Math.Abs(factor) * 0.25f);
+
+            r = Math.Clamp(luma + (r - luma) * saturationBoost, 0f, 255f);
+            g = Math.Clamp(luma + (g - luma) * saturationBoost, 0f, 255f);
+            b = Math.Clamp(luma + (b - luma) * saturationBoost, 0f, 255f);
+
+            // Apply darkness scaling 
+            float darkenScale = 1.0f + factor;
+            r *= darkenScale;
+            g *= darkenScale;
+            b *= darkenScale;
         }
         else
         {
-            red = (255 - red) * brightnessFactor + red;
-            green = (255 - green) * brightnessFactor + green;
-            blue = (255 - blue) * brightnessFactor + blue;
+            // --- LIGHTENING (Windows 11 Dark Mode Accent Shades) ---
+            // To prevent washed-out chalkiness, Windows dampens the saturation shift 
+            // and uses a smooth perceptual blend toward white
+            float saturationDampen = 1.0f - (factor * 0.15f);
+
+            r = Math.Clamp(luma + (r - luma) * saturationDampen, 0f, 255f);
+            g = Math.Clamp(luma + (g - luma) * saturationDampen, 0f, 255f);
+            b = Math.Clamp(luma + (b - luma) * saturationDampen, 0f, 255f);
+
+            // Interpolate smoothly to pure white
+            r += (255f - r) * factor;
+            g += (255f - g) * factor;
+            b += (255f - b) * factor;
         }
 
-        return Color.FromArgb(color.A, (byte)red, (byte)green, (byte)blue);
-    }
-
-
-    /// <summary>
-    /// Checks if this color is considered light.
-    /// </summary>
-    public static bool IsLight(this Color c)
-    {
-        return (((5 * c.G) + (2 * c.R) + c.B) > (8 * 128));
+        return Color.FromArgb(
+            color.A,
+            (byte)Math.Round(r),
+            (byte)Math.Round(g),
+            (byte)Math.Round(b)
+        );
     }
 
 

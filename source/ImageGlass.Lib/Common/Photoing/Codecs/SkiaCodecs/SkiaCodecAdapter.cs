@@ -52,7 +52,19 @@ public sealed class SkiaCodecAdapter : PhDisposable, ICodec
     public int DecodePriority { get; } = 100;
 
     /// <inheritdoc/>
-    public IReadOnlyList<string> SupportedExtensions => _supportedExtensions;
+    public int EncodePriority { get; }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<string> DecodingExtensions => _supportedExtensions;
+
+    /// <summary>
+    /// Decode-only. Writing goes through <see cref="MagickCodecAdapter"/>, which is also what
+    /// <c>SkiaCodec.SaveAsync</c> delegates to.
+    /// </summary>
+    public bool SupportsEncoding { get; }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<string> EncodingExtensions => [];
 
 
     /// <inheritdoc/>
@@ -84,8 +96,27 @@ public sealed class SkiaCodecAdapter : PhDisposable, ICodec
     public bool CanDecode(PhotoMetadata metadata, CodecSelectionContext context)
     {
         if (metadata is null || metadata.IsVector) return false;
-        if (!context.IsDestColorProfileSupported) return false;
-        if (context.LoadRawThumbnailOnly || context.LoadOtherThumbnailOnly) return false;
+        // An unsupported dest profile (e.g. CMYK) routes single-frame decode to Magick so it
+        // can bake the profile. But Magick decode is single-frame only, so animated images must
+        // stay on Skia (which builds the animator) or they lose animation.
+        if (!context.IsDestColorProfileSupported && metadata.FrameCount <= 1) return false;
+        // no Skia equivalent of ExifProfile.CreateThumbnail(), so the non-RAW preview stays on Magick
+        if (context.LoadOtherThumbnailOnly) return false;
+
+        // Skia decodes a RAW embedded preview an order of magnitude faster than Magick
+        if (context.LoadRawThumbnailOnly)
+        {
+            try
+            {
+                return SkiaCodec.CanReadRawPreview(metadata,
+                    context.PreviewMinWidth, context.PreviewMinHeight);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         if (Array.IndexOf(_supportedExtensions, metadata.FileExtension) < 0) return false;
 
         try
@@ -109,4 +140,21 @@ public sealed class SkiaCodecAdapter : PhDisposable, ICodec
 
         return CodecDecodeResultFactory.FromSkiaOutput(CodecId, output, metadata);
     }
+
+
+    /// <inheritdoc/>
+    public bool CanEncode(string destFilePath, CodecEncodeContext context) => false;
+
+    /// <inheritdoc/>
+    public Task<CodecEncodeResult> EncodeAsync(CodecEncodeRequest request,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(new CodecEncodeResult(false, true));
+
+    /// <inheritdoc/>
+    public bool CanEncodeMultiFrame(string destFilePath, CodecEncodeContext context) => false;
+
+    /// <inheritdoc/>
+    public Task<CodecEncodeResult> EncodeMultiFrameAsync(CodecMultiFrameEncodeRequest request,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(new CodecEncodeResult(false, true));
 }

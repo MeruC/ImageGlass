@@ -27,7 +27,7 @@
             Spacing="6">
             <ui:PhTextBlock
                 VerticalAlignment="Center"
-                LangKey="FrmCrop_LblAspectRatio"
+                LangKey="Tool_Crop_LblAspectRatio"
                 Opacity="0.6" />
             <ComboBox x:Name="PART_CmdAspectRatio" MinWidth="100">
                 <ComboBoxItem>[Free Ratio]</ComboBoxItem>
@@ -70,7 +70,7 @@
                 Spacing="6">
                 <ui:PhTextBlock
                     VerticalAlignment="Center"
-                    LangKey="FrmCrop_LblLocation"
+                    LangKey="Tool_Crop_LblLocation"
                     Opacity="0.6" />
 
                 <NumericUpDown
@@ -94,7 +94,7 @@
                 Spacing="6">
                 <ui:PhTextBlock
                     VerticalAlignment="Center"
-                    LangKey="FrmCrop_LblSize"
+                    LangKey="Tool_Crop_LblSize"
                     Opacity="0.6" />
 
                 <NumericUpDown

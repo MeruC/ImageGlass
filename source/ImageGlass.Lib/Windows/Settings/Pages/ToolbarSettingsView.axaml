@@ -1,0 +1,45 @@
+<windows:SettingsPageView
+    x:Class="ImageGlass.Common.Windows.ToolbarSettingsView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="using:ImageGlass.UI"
+    xmlns:windows="using:ImageGlass.Common.Windows"
+    mc:Ignorable="d"
+    d:DesignWidth="600"
+    HorizontalAlignment="Stretch">
+
+    <StackPanel Orientation="Vertical">
+
+        <!--  Appearance  -->
+        <ui:PhTextBlock Classes="group" LangKey="Settings_Appearance" />
+        <StackPanel Margin="{DynamicResource SettingsGroupIndent}" Spacing="10">
+            <CheckBox x:Name="PART_ShowToolbarInFullscreen">
+                <ui:PhTextBlock LangKey="Settings_Toolbar_ShowToolbarInFullscreen" TextWrapping="Wrap" />
+            </CheckBox>
+
+            <!--  Toolbar icon size (10 - 100)  -->
+            <StackPanel Spacing="{DynamicResource SettingsLabelInputGap}">
+                <ui:PhTextBlock x:Name="PART_IconHeightLabel" LangKey="Settings_Toolbar_ToolbarIconHeight" />
+                <Slider
+                    x:Name="PART_ToolbarIconHeight"
+                    Width="200"
+                    HorizontalAlignment="Left"
+                    IsSnapToTickEnabled="True"
+                    Maximum="100"
+                    Minimum="10"
+                    TickFrequency="1" />
+            </StackPanel>
+        </StackPanel>
+
+
+        <!--  Toolbar buttons  -->
+        <ui:PhTextBlock Classes="group" LangKey="Settings_Toolbar_ToolbarButtons" />
+        <StackPanel Margin="{DynamicResource SettingsGroupIndent}">
+            <windows:ToolbarEditorControl x:Name="PART_Editor" />
+        </StackPanel>
+
+    </StackPanel>
+
+</windows:SettingsPageView>

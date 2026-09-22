@@ -382,10 +382,12 @@ public class PhVirtualizingUniformPanel : VirtualizingPanel, IScrollSnapPointsIn
         var extStart = Math.Max(0, viewportStart - bufferSize);
         var extEnd = viewportEnd + bufferSize;
 
-        var firstVisible = Math.Max(0, (int)(extStart / _itemWidth));
-        var lastVisible = Math.Min(itemCount - 1, (int)(extEnd / _itemWidth));
+        var firstVisible = Math.Max(0, (int)(viewportStart / _itemWidth));
+        var lastVisible = Math.Min(itemCount - 1, (int)(viewportEnd / _itemWidth));
+        var firstRealized = Math.Max(0, (int)(extStart / _itemWidth));
+        var lastRealized = Math.Min(itemCount - 1, (int)(extEnd / _itemWidth));
 
-        RealizeRange(items, firstVisible, lastVisible);
+        RealizeRange(items, firstRealized, lastRealized, firstVisible, lastVisible);
 
         // Measure realized elements
         var constraint = new Size(_itemWidth, _itemHeight);
@@ -445,13 +447,17 @@ public class PhVirtualizingUniformPanel : VirtualizingPanel, IScrollSnapPointsIn
         var extStart = Math.Max(0, viewportStart - bufferSize);
         var extEnd = viewportEnd + bufferSize;
 
-        var firstRow = Math.Max(0, (int)(extStart / _itemHeight));
-        var lastRow = Math.Min(_totalRows - 1, (int)(extEnd / _itemHeight));
+        var firstVisibleRow = Math.Max(0, (int)(viewportStart / _itemHeight));
+        var lastVisibleRow = Math.Min(_totalRows - 1, (int)(viewportEnd / _itemHeight));
+        var firstRealizedRow = Math.Max(0, (int)(extStart / _itemHeight));
+        var lastRealizedRow = Math.Min(_totalRows - 1, (int)(extEnd / _itemHeight));
 
-        var firstVisible = firstRow * _columnsPerRow;
-        var lastVisible = Math.Min(itemCount - 1, (lastRow + 1) * _columnsPerRow - 1);
+        var firstVisible = firstVisibleRow * _columnsPerRow;
+        var lastVisible = Math.Min(itemCount - 1, (lastVisibleRow + 1) * _columnsPerRow - 1);
+        var firstRealized = firstRealizedRow * _columnsPerRow;
+        var lastRealized = Math.Min(itemCount - 1, (lastRealizedRow + 1) * _columnsPerRow - 1);
 
-        RealizeRange(items, firstVisible, lastVisible);
+        RealizeRange(items, firstRealized, lastRealized, firstVisible, lastVisible);
 
         // Measure realized elements
         var constraint = new Size(_itemWidth, _itemHeight);
@@ -492,7 +498,8 @@ public class PhVirtualizingUniformPanel : VirtualizingPanel, IScrollSnapPointsIn
     /// <summary>
     /// Realizes elements in [firstIndex, lastIndex] range and recycles out-of-range ones.
     /// </summary>
-    private void RealizeRange(IReadOnlyList<object?> items, int firstIndex, int lastIndex)
+    private void RealizeRange(IReadOnlyList<object?> items, int firstIndex, int lastIndex,
+        int visibleFirstIndex, int visibleLastIndex)
     {
         // 1) Recycle elements outside the new range
         for (var i = _realizedElements.Count - 1; i >= 0; i--)
@@ -512,15 +519,21 @@ public class PhVirtualizingUniformPanel : VirtualizingPanel, IScrollSnapPointsIn
             realizedIndices.Add(_realizedElements[i].Index);
         }
 
-        // 3) Realize missing elements in range
-        for (var idx = firstIndex; idx <= lastIndex; idx++)
+        // 3) Realize visible elements before the buffered range so their thumbnails start first.
+        void RealizeMissingRange(int start, int end)
         {
-            if (idx < 0 || idx >= items.Count) continue;
-            if (realizedIndices.Contains(idx)) continue;
+            for (var idx = start; idx <= end; idx++)
+            {
+                if (idx < 0 || idx >= items.Count || realizedIndices.Contains(idx)) continue;
 
-            var element = GetOrCreateElement(items, idx);
-            _realizedElements.Add(new RealizedElement(idx, element));
+                var element = GetOrCreateElement(items, idx);
+                _realizedElements.Add(new RealizedElement(idx, element));
+            }
         }
+
+        RealizeMissingRange(visibleFirstIndex, visibleLastIndex);
+        RealizeMissingRange(firstIndex, visibleFirstIndex - 1);
+        RealizeMissingRange(visibleLastIndex + 1, lastIndex);
     }
 
 

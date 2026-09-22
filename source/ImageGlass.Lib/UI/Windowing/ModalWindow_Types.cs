@@ -16,7 +16,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-using Avalonia.Media.Imaging;
+using Avalonia.Media;
 using ImageGlass.Common.Types;
 
 namespace ImageGlass.UI.Windowing;
@@ -80,11 +80,12 @@ public record ModalWindowOptions
     public string? Details { get; set; }
     public string? Note { get; set; }
     public InfoBarSeverity? NoteStyle { get; set; }
-    public Bitmap? Thumbnail { get; set; }
+    public IImage? Thumbnail { get; set; }
     public StockIconId? ThumbnailIcon { get; set; }
     public bool IsRememberOptionVisible { get; set; }
     public bool? IsInputVisible { get; set; }
     public string InputValue { get; set; } = string.Empty;
+    public string? InputPlaceholder { get; set; }
     public TextBoxAcceptValue AcceptValue { get; set; } = TextBoxAcceptValue.Any;
     public bool? ShowInTaskbar { get; set; }
 }

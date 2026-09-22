@@ -27,7 +27,8 @@ public class JsonStringToHotkeyConverter : JsonConverter<Hotkey>
 {
     public override void Write(Utf8JsonWriter writer, Hotkey? hotkey, JsonSerializerOptions options)
     {
-        writer.WriteStringValue(hotkey?.ToString());
+        // the display text is platform-specific and not always parsable, never persist it
+        writer.WriteStringValue(hotkey?.InvariantKeyString);
     }
 
     public override Hotkey? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)

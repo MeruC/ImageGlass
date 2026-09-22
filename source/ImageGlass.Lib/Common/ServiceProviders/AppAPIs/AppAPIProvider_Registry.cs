@@ -38,6 +38,7 @@ public partial class AppAPIProvider
 
         { API.IG_OpenFolder,            PhCommands.Create(IG_OpenFolderAsync) },
         { API.IG_OpenPath,              PhCommands.Create(IG_OpenPath) },
+        { API.IG_ApplySettings,         PhCommands.Create(IG_ApplySettingsAsync) },
 
 
         // Main Menu
@@ -141,7 +142,6 @@ public partial class AppAPIProvider
         { API.IG_ToggleTool,              PhCommands.Create(IG_ToggleTool) },
         { API.IG_OpenTool,                PhCommands.Create(IG_OpenTool) },
         { API.IG_CloseTool,               PhCommands.Create(IG_CloseTool) },
-        { API.IG_GetMoreTools,             PhCommands.Create(IG_GetMoreTools) },
 
 
         // Settings
@@ -150,8 +150,10 @@ public partial class AppAPIProvider
 
         // Help
         { API.IG_OpenAboutWindow,           PhCommands.Create(IG_OpenAboutWindowAsync) },
+        { API.IG_ManageLicense,             PhCommands.Create(IG_ManageLicenseAsync) },
         { API.IG_CheckForUpdate,            PhCommands.Create(IG_CheckForUpdateAsync) },
         { API.IG_ReportIssue,               PhCommands.Create(IG_ReportIssue) },
+        { API.IG_QuickSetup,                PhCommands.Create(IG_QuickSetupAsync) },
         { API.IG_SetDefaultPhotoViewer,     PhCommands.Create(IG_SetDefaultPhotoViewerAsync) },
         { API.IG_RemoveDefaultPhotoViewer,  PhCommands.Create(IG_RemoveDefaultPhotoViewerAsync) },
 
@@ -185,11 +187,82 @@ public partial class AppAPIProvider
 
 
     /// <summary>
-    /// Gets the API command.
+    /// Gets the API command, wrapped so a direct <c>ICommand</c> binding (e.g. a context-menu item)
+    /// is disabled and refuses to run while the API is LockedFeatures-locked. Command bindings skip
+    /// <see cref="RunApiAsync(API, string?)"/>, so this restores the lock gate for them.
     /// </summary>
     public IPhCommand? GetApiCommand(API api)
     {
-        return _apis.GetValueOrDefault(api);
+        var cmd = _apis.GetValueOrDefault(api);
+        return cmd is null ? null : new LockAwareApiCommand(api, cmd);
+    }
+
+
+    /// <summary>
+    /// Wraps an API command to enforce the feature lock on direct <c>ICommand</c> bindings that
+    /// bypass <see cref="RunApiAsync(API, string?)"/> (menu items bound via <see cref="GetApiCommand(API)"/>).
+    /// <see cref="CanExecute"/> reports <c>false</c> when locked (so the bound item renders disabled),
+    /// and <see cref="Execute"/>/<see cref="ExecuteAsync"/> no-op when locked as a hard backstop.
+    /// </summary>
+    private sealed class LockAwareApiCommand(API api, IPhCommand inner) : IPhCommand
+    {
+        public bool IsAsync => inner.IsAsync;
+
+        public event EventHandler? CanExecuteChanged
+        {
+            add => inner.CanExecuteChanged += value;
+            remove => inner.CanExecuteChanged -= value;
+        }
+
+        public bool CanExecute(object? parameter)
+            => !FeatureManager.IsLocked(api) && inner.CanExecute(parameter);
+
+        public void Execute(object? parameter)
+        {
+            if (!FeatureManager.IsLocked(api)) inner.Execute(parameter);
+        }
+
+        public Task ExecuteAsync(object? parameter)
+            => FeatureManager.IsLocked(api) ? Task.CompletedTask : inner.ExecuteAsync(parameter);
+    }
+
+
+    /// <summary>
+    /// APIs an external tool must NOT invoke over the IPC pipe: destructive,
+    /// process-spawning, or system-modifying. The trusted hotkey/menu path is
+    /// unaffected; this gate applies only to <c>ToolPipeServer</c>'s RUN_API handler.
+    /// </summary>
+    private static readonly FrozenSet<API> _toolBlockedApis = new[]
+    {
+        API.IG_Delete,
+        API.IG_Rename,
+        API.IG_Save,
+        API.IG_SaveAs,
+        API.IG_NewWindow,
+        API.IG_OpenWith,
+        API.IG_OpenEditingApp,
+        API.IG_SetDesktopBackground,
+        API.IG_SetLockScreenImage,
+        API.IG_SetDefaultPhotoViewer,
+        API.IG_RemoveDefaultPhotoViewer,
+        API.IG_ApplySettings,
+        API.IG_Exit,
+    }.ToFrozenSet();
+
+
+    /// <summary>
+    /// Returns <c>false</c> for APIs an external tool is not permitted to run over the
+    /// IPC pipe. Unknown names are allowed through here and fall to the normal
+    /// <c>ApiNotFound</c> handling in <see cref="RunApiAsync(string?, string?)"/>.
+    /// </summary>
+    public bool IsApiAllowedForTool(string? apiName)
+    {
+        if (Enum.TryParse<API>(apiName, out var api))
+        {
+            return !_toolBlockedApis.Contains(api);
+        }
+
+        return true;
     }
 
 
@@ -274,6 +347,15 @@ public partial class AppAPIProvider
         if (string.IsNullOrWhiteSpace(ac?.Executable)) return null;
 
 
+        // route a blocked Pro feature to the upgrade prompt instead of running it (hotkey, toolbar
+        // and menu; startup-restore/IPC go through RunApiAsync)
+        if (FeatureManager.IsProBlocked(Lang.GetKey(ac.LangKey)))
+        {
+            _ = await RunApiAsync(API.IG_ManageLicense);
+            return null;
+        }
+
+
         // 1. run the current action
         var acArgs = customArg ?? ac.Argument;
         var acResults = await RunApiAsync(ac.Executable, acArgs);
@@ -307,9 +389,9 @@ public partial class AppAPIProvider
         else if (acResults.ExitCode == ActionExitCode.ApiNotFound)
         {
             var args = string.Join(string.Empty, acArgs) ?? string.Empty;
-            var exeInfo = BHelper.BuildExeArgs(ac.Executable, args, Core.Photos.CurrentFilePath);
+            var exeInfo = BHelper.BuildExeArgList(ac.Executable, args, Core.Photos.CurrentFilePath);
 
-            var exeCode = await BHelper.RunExeCmd(exeInfo.Executable, exeInfo.Args, false, false);
+            var exeCode = await BHelper.RunExeCmd(exeInfo.Executable, exeInfo.Args, false);
             if (exeCode != IgExitCode.Done)
             {
                 var errorMsg = Core.Lang[LangId._UserAction_Win32ExeError, ac.Executable];
@@ -324,7 +406,7 @@ public partial class AppAPIProvider
             // get the language string for error title
             var errorTitle = Core.Lang[ac.LangKey];
 
-            _ = await ModalWindow.ShowErrorAsync(_mainWindow, new ModalWindowOptions
+            _ = await ModalWindow.ShowErrorAsync(App.MainWindow, new ModalWindowOptions
             {
                 Title = errorTitle,
                 Description = error.Message,

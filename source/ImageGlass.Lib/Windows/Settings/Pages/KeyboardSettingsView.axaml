@@ -1,0 +1,23 @@
+<windows:SettingsPageView
+    x:Class="ImageGlass.Common.Windows.KeyboardSettingsView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="using:ImageGlass.UI"
+    xmlns:windows="using:ImageGlass.Common.Windows"
+    mc:Ignorable="d"
+    d:DesignWidth="600"
+    HorizontalAlignment="Stretch">
+
+    <StackPanel Orientation="Vertical">
+
+        <!--  Menu hotkeys  -->
+        <ui:PhTextBlock Classes="group" LangKey="Settings_Keyboard_MenuHotkeys" />
+        <StackPanel Margin="{DynamicResource SettingsGroupIndent}">
+            <windows:MenuHotkeysEditorControl x:Name="PART_Editor" />
+        </StackPanel>
+
+    </StackPanel>
+
+</windows:SettingsPageView>

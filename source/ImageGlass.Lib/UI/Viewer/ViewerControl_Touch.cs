@@ -19,6 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 using Avalonia.Input;
 using Avalonia.Input.GestureRecognizers;
 using ImageGlass.Common;
+using ImageGlass.Common.ServiceProviders;
 using ImageGlass.Common.Types;
 using ImageGlass.UI.Viewer.ZoomAndPan;
 
@@ -89,8 +90,8 @@ public partial class ViewerControl
         {
             if (!_enablePanningVelocity) args.ShouldEndScrollGesture = true;
 
-            // perform panning
-            _ = PanTo(args.Delta.X, args.Delta.Y, null);
+            // perform panning (touch path skips the RunApiAsync lock gate, so honor the pan lock)
+            if (!FeatureManager.IsPanLocked()) _ = PanTo(args.Delta.X, args.Delta.Y, null);
         }
 
         e.Handled = true;
@@ -117,12 +118,13 @@ public partial class ViewerControl
         if (!isPintching) return;
 
 
-        // 3. perform panning
-        PanTo(-e.Translation.X, -e.Translation.Y, e.Position, !isPintching);
+        // 3. perform panning (honor the pan lock; this touch path skips the RunApiAsync gate)
+        if (!FeatureManager.IsPanLocked())
+            PanTo(-e.Translation.X, -e.Translation.Y, e.Position, !isPintching);
 
 
         // 4. perform zooming for Pinch gesture
-        if (isPintching)
+        if (isPintching && !FeatureManager.IsZoomLocked())
         {
             _ = ZoomByDeltaToPoint(delta, e.Position);
         }
@@ -146,7 +148,8 @@ public partial class ViewerControl
             delta *= 1000;
         }
 
-        ZoomByDeltaToPoint(delta, position);
+        // touchpad pinch skips the RunApiAsync lock gate, so honor the zoom lock here
+        if (!FeatureManager.IsZoomLocked()) ZoomByDeltaToPoint(delta, position);
         e.Handled = true;
     }
 

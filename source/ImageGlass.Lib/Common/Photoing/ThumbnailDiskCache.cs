@@ -51,14 +51,14 @@ internal static class ThumbnailDiskCache
     /// <summary>
     /// Tries to load a cached thumbnail from disk.
     /// </summary>
-    public static async Task<SKImage?> TryGetAsync(string filePath, int thumbSize, CancellationToken token = default)
+    public static async Task<SKImage?> TryGetAsync(string filePath, int thumbSize, DateTime sourceLastWriteTimeUtc, CancellationToken token = default)
     {
         if (Core.Config.GalleryCacheSizeInMb == 0)
         {
             ScheduleCleanupOnce();
             return null;
         }
-        if (string.IsNullOrEmpty(filePath)) return null;
+        if (string.IsNullOrEmpty(filePath) || sourceLastWriteTimeUtc == default) return null;
 
         var cachePath = GetCacheFilePath(filePath, thumbSize);
 
@@ -70,8 +70,7 @@ internal static class ThumbnailDiskCache
 
                 // validate: cache must be newer than source file
                 var cacheTime = File.GetLastWriteTimeUtc(cachePath);
-                var sourceTime = File.GetLastWriteTimeUtc(filePath);
-                if (cacheTime < sourceTime) return null;
+                if (cacheTime < sourceLastWriteTimeUtc) return null;
 
                 // decode: force immediate rasterization so the image
                 // does not depend on the file-mapped data after this block
@@ -102,9 +101,14 @@ internal static class ThumbnailDiskCache
 
 
     /// <summary>
-    /// Writes a thumbnail to the disk cache. Triggers async eviction if over budget.
+    /// Encodes and writes a thumbnail to the disk cache. Triggers async eviction if over budget.
     /// No-op if disk caching is disabled.
     /// </summary>
+    /// <remarks>
+    /// The caller must keep <paramref name="image"/> alive until this completes: encoding runs on a
+    /// background thread so it never blocks the gallery pipeline, so this must be awaited rather
+    /// than fired and forgotten.
+    /// </remarks>
     public static async Task PutAsync(string filePath,
         int thumbSize, SKImage image, CancellationToken token = default)
     {
@@ -116,17 +120,18 @@ internal static class ThumbnailDiskCache
         if (string.IsNullOrEmpty(filePath)) return;
         if (image.IsDisposed()) return;
 
-        // encode synchronously (runs on calling thread before first await)
-        using var encoded = image.Encode(SKEncodedImageFormat.Webp, 80);
-        if (encoded is null || encoded.Size == 0) return;
-
         var cachePath = GetCacheFilePath(filePath, thumbSize);
 
-        // write to disk asynchronously
+        // encode + write off the calling thread
         await Task.Run(() =>
         {
             try
             {
+                if (image.IsDisposed()) return;
+
+                using var encoded = image.Encode(SKEncodedImageFormat.Webp, 80);
+                if (encoded is null || encoded.Size == 0) return;
+
                 Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
 
                 using var fs = File.Create(cachePath);
@@ -168,9 +173,10 @@ internal static class ThumbnailDiskCache
 
 
     /// <summary>
-    /// Clears the entire disk cache.
+    /// Clears the entire disk cache. Returns the failure, or <c>null</c> when the cache is gone
+    /// (a thumbnail being written concurrently can keep the folder locked).
     /// </summary>
-    public static void Clear()
+    public static Exception? Clear()
     {
         try
         {
@@ -181,8 +187,12 @@ internal static class ThumbnailDiskCache
             }
 
             _cacheDir = null;
+            return null;
         }
-        catch { }
+        catch (Exception ex)
+        {
+            return ex;
+        }
     }
 
     #endregion // Public Methods

@@ -38,6 +38,12 @@ public interface IToolControl : ITool
 
 
     /// <summary>
+    /// Gets the value indicates that the tool is a Pro feature shown as a read-only preview.
+    /// </summary>
+    bool IsProPreview => false;
+
+
+    /// <summary>
     /// Shows the tool settings window.
     /// </summary>
     Task ShowSettingsWindowAsync() => Task.CompletedTask;

@@ -32,6 +32,12 @@ public partial class CropImageConfigJsonContext : JsonSerializerContext { }
 
 
 /// <summary>
+/// A parsed crop preset: a fixed size, and an optional fixed location.
+/// </summary>
+public readonly record struct CropPresetSize(int W, int H, int? X, int? Y);
+
+
+/// <summary>
 /// Provides settings for Color Picker tool.
 /// </summary>
 public class CropImageConfig() : PhReactive
@@ -41,6 +47,21 @@ public class CropImageConfig() : PhReactive
     /// Gets, sets the option to close the Crop tool after the selected area is saved.
     /// </summary>
     public bool CloseAfterSaved
+    {
+        get; set
+        {
+            if (field == value) return;
+            field = value;
+            _ = OnPropertyChanged();
+        }
+    } = false;
+
+
+    /// <summary>
+    /// Gets, sets whether saving backs up the original file into an "originals" subfolder
+    /// next to it before it's overwritten.
+    /// </summary>
+    public bool BackupOriginalOnSave
     {
         get; set
         {
@@ -107,7 +128,7 @@ public class CropImageConfig() : PhReactive
             field = value;
             _ = OnPropertyChanged();
         }
-    } = DefaultSelectionType.SelectNone;
+    } = DefaultSelectionType.SelectAll;
 
 
     /// <summary>
@@ -129,8 +150,9 @@ public class CropImageConfig() : PhReactive
 
 
     /// <summary>
-    /// Gets, sets user-defined preset crop sizes as "WxH" strings (e.g. "1660x1080").
-    /// These appear in the Preset dropdown of the crop tool panel.
+    /// Gets, sets user-defined preset crop sizes as "WxH" strings (e.g. "1660x1080"), optionally
+    /// followed by a fixed location as "WxH@X,Y" (e.g. "1920x816@0,132"). A preset without a
+    /// location keeps whatever position the selection currently has when applied.
     /// </summary>
     public List<string> PresetSizes
     {
@@ -140,19 +162,50 @@ public class CropImageConfig() : PhReactive
             field = value;
             _ = OnPropertyChanged();
         }
-    } = ["1660x1080"];
+    } = ["1660x1080", "1920x816@0,132"];
 
 
     /// <summary>
-    /// Parses <see cref="PresetSizes"/> into (width, height) pairs, skipping invalid entries.
+    /// Parses <see cref="PresetSizes"/> into <see cref="CropPresetSize"/> values, skipping invalid entries.
     /// </summary>
-    public IEnumerable<(int W, int H)> ParsedPresetSizes =>
+    [JsonIgnore]
+    public IEnumerable<CropPresetSize> ParsedPresetSizes =>
         PresetSizes
-            .Select(s => s.Split(['x', 'X', '×'], 2))
-            .Where(p => p.Length == 2
-                && int.TryParse(p[0].Trim(), out _)
-                && int.TryParse(p[1].Trim(), out _))
-            .Select(p => (int.Parse(p[0].Trim()), int.Parse(p[1].Trim())));
+            .Select(ParsePresetSize)
+            .Where(p => p is not null)
+            .Select(p => p!.Value);
+
+
+    /// <summary>
+    /// Parses a single "WxH" or "WxH@X,Y" preset string.
+    /// </summary>
+    private static CropPresetSize? ParsePresetSize(string s)
+    {
+        var parts = s.Split('@', 2);
+
+        var sizeTokens = parts[0].Split(['x', 'X', '×'], 2);
+        if (sizeTokens.Length != 2
+            || !int.TryParse(sizeTokens[0].Trim(), out var w)
+            || !int.TryParse(sizeTokens[1].Trim(), out var h))
+        {
+            return null;
+        }
+
+        int? x = null, y = null;
+        if (parts.Length > 1)
+        {
+            var locationTokens = parts[1].Split(',', 2);
+            if (locationTokens.Length == 2
+                && int.TryParse(locationTokens[0].Trim(), out var px)
+                && int.TryParse(locationTokens[1].Trim(), out var py))
+            {
+                x = px;
+                y = py;
+            }
+        }
+
+        return new CropPresetSize(w, h, x, y);
+    }
 
 
     /// <summary>

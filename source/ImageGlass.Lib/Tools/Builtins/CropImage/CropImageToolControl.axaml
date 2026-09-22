@@ -138,6 +138,7 @@
                 MinWidth="80"
                 HorizontalContentAlignment="Center"
                 IconData="{StaticResource IconSave}" />
+            <CheckBox x:Name="PART_ChkBackupOriginal" VerticalAlignment="Center" />
             <ui:PhButton
                 x:Name="PART_BtnSaveAs"
                 MinWidth="80"

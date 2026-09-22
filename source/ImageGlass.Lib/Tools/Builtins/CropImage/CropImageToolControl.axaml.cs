@@ -29,6 +29,7 @@ using ImageGlass.UI;
 using ImageGlass.UI.Viewer;
 using ImageGlass.UI.Windowing;
 using System;
+using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -39,6 +40,10 @@ public partial class CropImageToolControl : PhControl, IToolControl
     // prevents dead-loop when updating NumericUpDown values from SelectionChanged
     private bool _isUpdatingSelectionUI;
     private Rect _lastSelectionArea;
+
+    // the preset currently applied, if any; re-applied on each new photo until the user
+    // picks the placeholder ("—") item again, and forgotten once the tool is closed
+    private CropPresetSize? _activePreset;
 
 
     public static string TOOL_ID => "Tool_CropImage";
@@ -74,6 +79,7 @@ public partial class CropImageToolControl : PhControl, IToolControl
         PART_BtnSaveAs.Click += PART_BtnSaveAs_Click;
         PART_BtnCrop.Click += PART_BtnCrop_Click;
         PART_BtnCopy.Click += PART_BtnCopy_Click;
+        PART_ChkBackupOriginal.IsCheckedChanged += PART_ChkBackupOriginal_IsCheckedChanged;
 
         // subscribe to aspect ratio change
         PART_CmdAspectRatio.SelectionChanged += PART_CmdAspectRatio_SelectionChanged;
@@ -99,6 +105,7 @@ public partial class CropImageToolControl : PhControl, IToolControl
         PART_NumRatioFrom.Value = Options.AspectRatioValues[0];
         PART_NumRatioTo.Value = Options.AspectRatioValues[1];
         PART_CmdAspectRatio.SelectedIndex = (int)Options.AspectRatio;
+        PART_ChkBackupOriginal.IsChecked = Options.BackupOriginalOnSave;
         _isUpdatingSelectionUI = false;
 
         // populate preset sizes from settings
@@ -121,6 +128,7 @@ public partial class CropImageToolControl : PhControl, IToolControl
         PART_BtnSaveAs.Click -= PART_BtnSaveAs_Click;
         PART_BtnCrop.Click -= PART_BtnCrop_Click;
         PART_BtnCopy.Click -= PART_BtnCopy_Click;
+        PART_ChkBackupOriginal.IsCheckedChanged -= PART_ChkBackupOriginal_IsCheckedChanged;
 
         PART_CmdAspectRatio.SelectionChanged -= PART_CmdAspectRatio_SelectionChanged;
         PART_CmdPresetSize.SelectionChanged -= PART_CmdPresetSize_SelectionChanged;
@@ -152,6 +160,7 @@ public partial class CropImageToolControl : PhControl, IToolControl
         PART_BtnSaveAs.Text = Core.Lang[LangId.Tool_Crop_BtnSaveAs];
         PART_BtnCrop.Text = Core.Lang[LangId.Tool_Crop_BtnCrop];
         PART_BtnCopy.Text = Core.Lang[LangId.Tool_Crop_BtnCopy];
+        ToolTip.SetTip(PART_ChkBackupOriginal, Core.Lang[LangId.Tool_Crop_ChkBackupOriginal]);
 
         PART_CmdAspectRatio.Items[0] = Core.Lang[LangId.Tool_Crop_SelectionAspectRatio_FreeRatio];
         PART_CmdAspectRatio.Items[1] = Core.Lang[LangId.Tool_Crop_SelectionAspectRatio_Custom];
@@ -173,7 +182,23 @@ public partial class CropImageToolControl : PhControl, IToolControl
         if (_isUpdatingSelectionUI) return;
 
         UpdateAspectRatioValues();
-        LoadDefaultSelection();
+        ApplyCurrentSelection();
+    }
+
+
+    /// <summary>
+    /// Re-applies the active preset, if any, otherwise the default selection.
+    /// </summary>
+    private void ApplyCurrentSelection()
+    {
+        if (_activePreset is { } preset)
+        {
+            ApplyPreset(preset);
+        }
+        else
+        {
+            LoadDefaultSelection();
+        }
     }
 
 
@@ -182,20 +207,39 @@ public partial class CropImageToolControl : PhControl, IToolControl
         if (_isUpdatingSelectionUI) return;
 
         var index = PART_CmdPresetSize.SelectedIndex;
-        if (index <= 0) return;
+        if (index <= 0)
+        {
+            // "—" (nothing) re-selected: forget the preset and go back to the default selection
+            _activePreset = null;
+            LoadDefaultSelection();
+            return;
+        }
 
-        // retrieve the (W, H) stored as tag on the selected item
+        // retrieve the preset stored as tag on the selected item
         if (PART_CmdPresetSize.Items[index] is not ComboBoxItem item) return;
-        if (item.Tag is not (int w, int h)) return;
+        if (item.Tag is not CropPresetSize preset) return;
 
-        _isUpdatingSelectionUI = true;
-        PART_NumWidth.Value = w;
-        PART_NumHeight.Value = h;
-        _isUpdatingSelectionUI = false;
+        // keep the item selected (remembered) instead of resetting to the placeholder;
+        // it stays applied across photos until "—" is chosen again or the tool is closed
+        _activePreset = preset;
+        ApplyPreset(preset);
+    }
 
-        // reset back to placeholder so re-selecting the same item works next time
+
+    /// <summary>
+    /// Applies a crop preset's size, and its location if it specifies one.
+    /// </summary>
+    private void ApplyPreset(CropPresetSize preset)
+    {
         _isUpdatingSelectionUI = true;
-        PART_CmdPresetSize.SelectedIndex = 0;
+        PART_NumWidth.Value = preset.W;
+        PART_NumHeight.Value = preset.H;
+
+        if (preset.X is int x && preset.Y is int y)
+        {
+            PART_NumX.Value = x;
+            PART_NumY.Value = y;
+        }
         _isUpdatingSelectionUI = false;
 
         LoadSelectionFromInputs();
@@ -213,7 +257,7 @@ public partial class CropImageToolControl : PhControl, IToolControl
         Options.AspectRatioValues = [ratioW, ratioH];
         Viewer.SelectionAspectRatio = new Size(ratioW, ratioH);
 
-        LoadDefaultSelection();
+        ApplyCurrentSelection();
     }
 
 
@@ -221,11 +265,12 @@ public partial class CropImageToolControl : PhControl, IToolControl
     {
         if (e.State != PhotoState.Loaded) return;
 
-        // restore default selection when the new photo is fully loaded
+        // restore the default selection, or the active preset if one is applied,
+        // when the new photo is fully loaded
         Dispatcher.UIThread.Post(() =>
         {
             UpdateAspectRatioValues();
-            LoadDefaultSelection();
+            ApplyCurrentSelection();
         });
     }
 
@@ -255,13 +300,69 @@ public partial class CropImageToolControl : PhControl, IToolControl
     }
 
 
+    private void PART_ChkBackupOriginal_IsCheckedChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_isUpdatingSelectionUI) return;
+
+        Options.BackupOriginalOnSave = PART_ChkBackupOriginal.IsChecked == true;
+    }
+
+
     private async void PART_BtnSave_Click(object? sender, RoutedEventArgs e)
     {
-        await Core.API!.RunApiAsync(API.IG_Save);
+        if (Options.BackupOriginalOnSave)
+        {
+            BackupOriginalFile();
+
+            // the original is already preserved in "originals", so the overwrite warning
+            // would be redundant here; save directly instead of through IG_Save
+            var srcFilePath = Core.Photos.CurrentFilePath;
+            if (!string.IsNullOrEmpty(srcFilePath))
+            {
+                await AppAPIProvider.SaveImageAsync(srcFilePath);
+            }
+            else
+            {
+                await Core.API!.RunApiAsync(API.IG_Save);
+            }
+        }
+        else
+        {
+            await Core.API!.RunApiAsync(API.IG_Save);
+        }
 
         if (Options.CloseAfterSaved)
         {
             await Core.API!.RunApiAsync(API.IG_CloseCurrentTool);
+        }
+    }
+
+
+    /// <summary>
+    /// Copies the current photo file into an "originals" subfolder next to it, before Save
+    /// overwrites it. Skips the copy if that backup already exists, so repeated saves never
+    /// clobber the true original with an already-cropped version.
+    /// </summary>
+    private static void BackupOriginalFile()
+    {
+        var srcFilePath = Core.Photos.CurrentFilePath;
+        if (string.IsNullOrEmpty(srcFilePath) || !File.Exists(srcFilePath)) return;
+
+        var dir = Path.GetDirectoryName(srcFilePath);
+        if (string.IsNullOrEmpty(dir)) return;
+
+        var originalsDir = Path.Combine(dir, "originals");
+        var destFilePath = Path.Combine(originalsDir, Path.GetFileName(srcFilePath));
+        if (File.Exists(destFilePath)) return;
+
+        try
+        {
+            Directory.CreateDirectory(originalsDir);
+            File.Copy(srcFilePath, destFilePath);
+        }
+        catch
+        {
+            // backup is best-effort; a failure here shouldn't block saving
         }
     }
 
@@ -363,12 +464,16 @@ public partial class CropImageToolControl : PhControl, IToolControl
         // placeholder item
         PART_CmdPresetSize.Items.Add(new ComboBoxItem { Content = "—" });
 
-        foreach (var (w, h) in Options.ParsedPresetSizes)
+        foreach (var preset in Options.ParsedPresetSizes)
         {
+            var content = preset.X is int x && preset.Y is int y
+                ? $"{preset.W} × {preset.H} ({x}, {y})"
+                : $"{preset.W} × {preset.H}";
+
             PART_CmdPresetSize.Items.Add(new ComboBoxItem
             {
-                Content = $"{w} × {h}",
-                Tag = (w, h),
+                Content = content,
+                Tag = preset,
             });
         }
 

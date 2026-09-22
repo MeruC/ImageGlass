@@ -659,6 +659,7 @@ public enum LangId
     FrmCrop_LblAspectRatio,
     FrmCrop_LblLocation,
     FrmCrop_LblSize,
+    FrmCrop_LblPreset,
 
     FrmCrop_SelectionAspectRatio_FreeRatio,
     FrmCrop_SelectionAspectRatio_Custom,

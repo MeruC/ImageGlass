@@ -109,6 +109,10 @@
                     Minimum="0"
                     ParsingNumberStyle="Integer"
                     ShowButtonSpinner="False" />
+                <ComboBox
+                    x:Name="PART_CmdPresetSize"
+                    MinWidth="110"
+                    ToolTip.Tip="Preset size" />
             </StackPanel>
         </WrapPanel>
 

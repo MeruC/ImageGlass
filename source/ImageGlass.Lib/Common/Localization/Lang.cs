@@ -922,6 +922,7 @@ public class Lang
         new(LangId.FrmCrop_LblAspectRatio, "Aspect ratio"), //v9.0
         new(LangId.FrmCrop_LblLocation, "Location"), //v9.0
         new(LangId.FrmCrop_LblSize, "Size"), //v9.0
+        new(LangId.FrmCrop_LblPreset, "Preset"), //v10
 
         new(LangId.FrmCrop_SelectionAspectRatio_FreeRatio, "Free ratio"), //v9.0
         new(LangId.FrmCrop_SelectionAspectRatio_Custom, "Custom…"), //v9.0

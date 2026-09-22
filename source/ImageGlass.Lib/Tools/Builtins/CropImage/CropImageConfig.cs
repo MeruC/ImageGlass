@@ -21,11 +21,13 @@ using ImageGlass.Common.Types;
 using ImageGlass.Common.Types.JsonTypeConverters;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
+using System.Linq;
 
 namespace ImageGlass.Tools;
 
 
 [JsonSerializable(typeof(CropImageConfig))]
+[JsonSerializable(typeof(List<string>))]
 public partial class CropImageConfigJsonContext : JsonSerializerContext { }
 
 
@@ -124,6 +126,33 @@ public class CropImageConfig() : PhReactive
 
 
 
+
+
+    /// <summary>
+    /// Gets, sets user-defined preset crop sizes as "WxH" strings (e.g. "1660x1080").
+    /// These appear in the Preset dropdown of the crop tool panel.
+    /// </summary>
+    public List<string> PresetSizes
+    {
+        get; set
+        {
+            if (field == value) return;
+            field = value;
+            _ = OnPropertyChanged();
+        }
+    } = ["1660x1080"];
+
+
+    /// <summary>
+    /// Parses <see cref="PresetSizes"/> into (width, height) pairs, skipping invalid entries.
+    /// </summary>
+    public IEnumerable<(int W, int H)> ParsedPresetSizes =>
+        PresetSizes
+            .Select(s => s.Split(['x', 'X', '×'], 2))
+            .Where(p => p.Length == 2
+                && int.TryParse(p[0].Trim(), out _)
+                && int.TryParse(p[1].Trim(), out _))
+            .Select(p => (int.Parse(p[0].Trim()), int.Parse(p[1].Trim())));
 
 
     /// <summary>

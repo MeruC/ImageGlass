@@ -78,6 +78,9 @@ public partial class CropImageToolControl : PhControl, IToolControl
         // subscribe to aspect ratio change
         PART_CmdAspectRatio.SelectionChanged += PART_CmdAspectRatio_SelectionChanged;
 
+        // subscribe to preset size change
+        PART_CmdPresetSize.SelectionChanged += PART_CmdPresetSize_SelectionChanged;
+
         // subscribe to NumericUpDown value changes
         PART_NumX.ValueChanged += NumSelection_ValueChanged;
         PART_NumY.ValueChanged += NumSelection_ValueChanged;
@@ -98,6 +101,9 @@ public partial class CropImageToolControl : PhControl, IToolControl
         PART_CmdAspectRatio.SelectedIndex = (int)Options.AspectRatio;
         _isUpdatingSelectionUI = false;
 
+        // populate preset sizes from settings
+        PopulatePresetSizes();
+
         // apply aspect ratio and load default selection
         UpdateAspectRatioValues();
         UpdateCustomRatioVisibility();
@@ -117,6 +123,7 @@ public partial class CropImageToolControl : PhControl, IToolControl
         PART_BtnCopy.Click -= PART_BtnCopy_Click;
 
         PART_CmdAspectRatio.SelectionChanged -= PART_CmdAspectRatio_SelectionChanged;
+        PART_CmdPresetSize.SelectionChanged -= PART_CmdPresetSize_SelectionChanged;
 
         PART_NumX.ValueChanged -= NumSelection_ValueChanged;
         PART_NumY.ValueChanged -= NumSelection_ValueChanged;
@@ -167,6 +174,31 @@ public partial class CropImageToolControl : PhControl, IToolControl
 
         UpdateAspectRatioValues();
         LoadDefaultSelection();
+    }
+
+
+    private void PART_CmdPresetSize_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_isUpdatingSelectionUI) return;
+
+        var index = PART_CmdPresetSize.SelectedIndex;
+        if (index <= 0) return;
+
+        // retrieve the (W, H) stored as tag on the selected item
+        if (PART_CmdPresetSize.Items[index] is not ComboBoxItem item) return;
+        if (item.Tag is not (int w, int h)) return;
+
+        _isUpdatingSelectionUI = true;
+        PART_NumWidth.Value = w;
+        PART_NumHeight.Value = h;
+        _isUpdatingSelectionUI = false;
+
+        // reset back to placeholder so re-selecting the same item works next time
+        _isUpdatingSelectionUI = true;
+        PART_CmdPresetSize.SelectedIndex = 0;
+        _isUpdatingSelectionUI = false;
+
+        LoadSelectionFromInputs();
     }
 
 
@@ -317,6 +349,31 @@ public partial class CropImageToolControl : PhControl, IToolControl
             UpdateAspectRatioValues();
             LoadDefaultSelection();
         }
+    }
+
+
+    /// <summary>
+    /// Populates <see cref="PART_CmdPresetSize"/> from <see cref="CropImageConfig.PresetSizes"/>.
+    /// </summary>
+    private void PopulatePresetSizes()
+    {
+        _isUpdatingSelectionUI = true;
+        PART_CmdPresetSize.Items.Clear();
+
+        // placeholder item
+        PART_CmdPresetSize.Items.Add(new ComboBoxItem { Content = "—" });
+
+        foreach (var (w, h) in Options.ParsedPresetSizes)
+        {
+            PART_CmdPresetSize.Items.Add(new ComboBoxItem
+            {
+                Content = $"{w} × {h}",
+                Tag = (w, h),
+            });
+        }
+
+        PART_CmdPresetSize.SelectedIndex = 0;
+        _isUpdatingSelectionUI = false;
     }
 
 
